@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# 训练/日志产物（大文件、二进制、可再生成）
+logs/
+czy/data/
+czy/real_data/
+*.log
+*.pt
+*.mp4
+*.mpg
+*.avi
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.csv
+
+# 构建产物
+humanoid.egg-info/
+build/
+dist/
+*.egg-info/
+
+# 系统
+.DS_Store
+
+# ===== 凭据 - 绝不提交 =====
+czy/skills/flux-cli/api_key.json
