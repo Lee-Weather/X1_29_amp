@@ -121,11 +121,11 @@ def play(args):
     # （否则关节回退 URDF 默认 armature=0，有效惯量比训练时轻，策略在与训练不一致的动力学上被评测）
     env_cfg.domain_rand.randomize_joint_armature = False   # 随机关闭，改用下方固定值
     env_cfg.domain_rand.fixed_armature = {
-        'left_hip_pitch_joint': 0.16,  'right_hip_pitch_joint': 0.16,   # exp1.5 [0.09,0.23] 对称中心
-        'left_hip_yaw_joint': 0.0105,  'right_hip_yaw_joint': 0.0105,   # exp1.5 [0.003,0.018] 中心
-        'left_knee_pitch_joint': 0.25, 'right_knee_pitch_joint': 0.25,  # exp1.5 [0.18,0.32] CORE 中心
+        'left_hip_pitch_joint': 0.16,  'right_hip_pitch_joint': 0.16,   # legacy exp1.5 [0.09,0.23] 对称中心
+        'left_hip_yaw_joint': 0.0105,  'right_hip_yaw_joint': 0.0105,   # legacy exp1.5 [0.003,0.018] 中心
+        'left_knee_pitch_joint': 0.25, 'right_knee_pitch_joint': 0.25,  # legacy exp1.5 [0.18,0.32] CORE 中心
         # 髋 roll / 双踝无辨识数据，训练用 [0.0001,0.05] 近似 0，回放保持 0
-        # ---- 29DOF 上半身（exp2 [0.003,0.04] 覆盖随机化中心；12DOF 任务下多余键自动无效）----
+        # ---- 29DOF 上半身（exp0 [0.003,0.04] 覆盖随机化中心；12DOF 任务下多余键自动无效）----
         'lumbar_yaw_joint': 0.0215,   'lumbar_roll_joint': 0.0215,   'lumbar_pitch_joint': 0.0215,
         'left_shoulder_pitch_joint': 0.0215,  'right_shoulder_pitch_joint': 0.0215,
         'left_shoulder_roll_joint': 0.0215,   'right_shoulder_roll_joint': 0.0215,
@@ -139,7 +139,7 @@ def play(args):
         'left_hip_pitch_joint': 3.0,  'right_hip_pitch_joint': 3.0,
         'left_hip_roll_joint': 3.0,   'right_hip_roll_joint': 3.0,
         'left_hip_yaw_joint': 4.0,    'right_hip_yaw_joint': 4.0,
-        'left_knee_pitch_joint': 8.0, 'right_knee_pitch_joint': 8.0,   # exp1.2 手动调参
+        'left_knee_pitch_joint': 8.0, 'right_knee_pitch_joint': 8.0,   # legacy exp1.2 手动调参
         'left_ankle_pitch_joint': 1.5,'right_ankle_pitch_joint': 1.5,
         'left_ankle_roll_joint': 1.5, 'right_ankle_roll_joint': 1.5,
         # ---- 29DOF 上半身（= control.damping 训练值；12DOF 任务下多余键自动无效）----

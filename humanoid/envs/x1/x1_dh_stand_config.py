@@ -60,7 +60,7 @@ class X1DHStandCfg(LeggedRobotCfg):
 
 
     class asset(LeggedRobotCfg.asset):
-        # exp2：29DOF 全身 URDF（Isaac Gym dof 序：左腿0-5/腰6-8/左臂9-15/右臂16-22/右腿23-28，env 按名索引腿部）
+        # exp0：29DOF 全身 URDF（Isaac Gym dof 序：左腿0-5/腰6-8/左臂9-15/右臂16-22/右腿23-28，env 按名索引腿部）
         # 右踝 pitch 轴 (0 0 -1)@rpy(π,0,0)，与左踝世界轴反平行（原版 physically_mirrored 约定，exp0 验证）
         file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/x1/urdf/X1_29DOF_physically_mirrored.urdf'
         xml_file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/x1/mjcf/xyber_x1_flat.xml'
@@ -128,7 +128,7 @@ class X1DHStandCfg(LeggedRobotCfg):
         pos = [0.0, 0.0, 0.7]
 
         default_joint_angles = {  # = target angles [rad] when action = 0.0
-            # ---- 腿部（沿用 exp1.5；右踝 pitch 反号：29DOF PM 轴与左踝世界轴反平行）----
+            # ---- 腿部（沿用 legacy exp1.5；右踝 pitch 反号：29DOF PM 轴与左踝世界轴反平行）----
             'left_hip_pitch_joint': 0.4,
             'left_hip_roll_joint': 0.05,
             'left_hip_yaw_joint': -0.31,
@@ -160,14 +160,14 @@ class X1DHStandCfg(LeggedRobotCfg):
 
         stiffness = {'hip_pitch_joint': 30, 'hip_roll_joint': 40,'hip_yaw_joint': 35,
                      'knee_pitch_joint': 100, 'ankle_pitch_joint': 35, 'ankle_roll_joint': 35,
-                     # exp2 29DOF 上半身（无真机辨识，量级建议值；缺键=被动悬摆）
+                     # exp0 29DOF 上半身（无真机辨识，量级建议值；缺键=被动悬摆）
                      'lumbar_yaw_joint': 60, 'lumbar_roll_joint': 60, 'lumbar_pitch_joint': 80,
                      'shoulder_pitch_joint': 40, 'shoulder_roll_joint': 40, 'shoulder_yaw_joint': 40,
                      'elbow_pitch_joint': 30, 'elbow_yaw_joint': 30,
                      'wrist_pitch_joint': 8, 'wrist_roll_joint': 8}
         damping = {'hip_pitch_joint': 3, 'hip_roll_joint': 3.0,'hip_yaw_joint': 4,
                    'knee_pitch_joint': 8, 'ankle_pitch_joint': 1.5, 'ankle_roll_joint': 1.5,
-                   # exp2 29DOF 上半身
+                   # exp0 29DOF 上半身
                    'lumbar_yaw_joint': 4, 'lumbar_roll_joint': 4, 'lumbar_pitch_joint': 5,
                    'shoulder_pitch_joint': 2, 'shoulder_roll_joint': 2, 'shoulder_yaw_joint': 2,
                    'elbow_pitch_joint': 1.5, 'elbow_yaw_joint': 1.5,
@@ -262,16 +262,16 @@ class X1DHStandCfg(LeggedRobotCfg):
         randomize_joint_armature = True
         randomize_joint_armature_each_joint = True  # 必须开启，否则逐关节范围不生效
         joint_armature_range = [0.0001, 0.05]     # 统一回退值（each_joint=False 时使用）
-        # exp2（29DOF）：Isaac Gym 实际 dof 顺序（字母序 DFS，冒烟实测打印的 [DOF] 表）：
+        # exp0（29DOF）：Isaac Gym 实际 dof 顺序（字母序 DFS，冒烟实测打印的 [DOF] 表）：
         # 左腿(0-5)→腰(6-8)→左臂(9-15)→右臂(16-22)→右腿(23-28)，joint_N 对应 dof N-1
-        # 腿部辨识值沿用 exp1.5（29DOF 腿部与 12DOF physically_mirrored 同源）：
+        # 腿部辨识值沿用 legacy exp1.5（29DOF 腿部与 12DOF physically_mirrored 同源）：
         # armature = 真机辨识J − M_ii：髋Pitch 0.196（左右对称化）、髋Yaw 0.0148/0.0060、膝 0.250/0.247
-        joint_1_armature_range = [0.09, 0.23]     # dof0 L hip_pitch (id 0.196)：M_ii=0.271，左右对称化（exp1.1 教训）
+        joint_1_armature_range = [0.09, 0.23]     # dof0 L hip_pitch (id 0.196)：M_ii=0.271，左右对称化（legacy exp1.1 教训）
         joint_2_armature_range = [0.0001, 0.05]   # dof1 L hip_roll (id unreliable)
         joint_3_armature_range = [0.003, 0.018]   # dof2 L hip_yaw (id 0.0148)：M_ii=0.0309
         joint_4_armature_range = [0.18, 0.32]     # dof3 L knee (id 0.250) CORE：M_ii=0.1127
-        joint_5_armature_range = [0.003, 0.04]    # dof4 L ankle_pitch: exp1.4 覆盖随机化（无辨识数据，不猜中心）
-        joint_6_armature_range = [0.003, 0.04]    # dof5 L ankle_roll: exp1.4 同上（真机抖动关节，覆盖最关键）
+        joint_5_armature_range = [0.003, 0.04]    # dof4 L ankle_pitch: legacy exp1.4 覆盖随机化（无辨识数据，不猜中心）
+        joint_6_armature_range = [0.003, 0.04]    # dof5 L ankle_roll: legacy exp1.4 同上（真机抖动关节，覆盖最关键）
         joint_7_armature_range = [0.003, 0.04]    # dof6 lumbar_yaw（无辨识，覆盖随机化）
         joint_8_armature_range = [0.003, 0.04]    # dof7 lumbar_roll
         joint_9_armature_range = [0.003, 0.04]    # dof8 lumbar_pitch
@@ -293,8 +293,8 @@ class X1DHStandCfg(LeggedRobotCfg):
         joint_25_armature_range = [0.0001, 0.05]  # dof24 R hip_roll (id unreliable)
         joint_26_armature_range = [0.003, 0.018]  # dof25 R hip_yaw (id 0.0060)：与左侧一致
         joint_27_armature_range = [0.18, 0.32]    # dof26 R knee (id 0.246) CORE：与左侧一致
-        joint_28_armature_range = [0.003, 0.04]   # dof27 R ankle_pitch: exp1.4 与左侧一致（覆盖随机化）
-        joint_29_armature_range = [0.003, 0.04]   # dof28 R ankle_roll: exp1.4 与左侧一致（真机抖动关节）
+        joint_28_armature_range = [0.003, 0.04]   # dof27 R ankle_pitch: legacy exp1.4 与左侧一致（覆盖随机化）
+        joint_29_armature_range = [0.003, 0.04]   # dof28 R ankle_roll: legacy exp1.4 与左侧一致（真机抖动关节）
 
         add_lag = True
         randomize_lag_timesteps = True
@@ -378,26 +378,26 @@ class X1DHStandCfg(LeggedRobotCfg):
             foot_slip = -0.1
             feet_distance = 0.2   # exp0.3: 0.3→0.2 回退（exp0.2 证实带来 vx 过冲副作用，收益不明显）
             knee_distance = 0.2
-            feet_contact_number = 2.4  # exp1.3: 2.0→2.4 强化左右步节拍对称（治偏航离散累积）
+            feet_contact_number = 2.4  # legacy exp1.3: 2.0→2.4 强化左右步节拍对称（治偏航离散累积）
             # lateral
-            lat_vel = -2.0        # exp1.1: -1.2->-2.0 加压（exp1 净漂 -0.10/-0.12 未压住）
-            yaw_drift = -0.8      # exp1.3: 新增偏航角速度线性惩罚（无转向指令时生效）
+            lat_vel = -2.0        # legacy exp1.1: -1.2->-2.0 加压（exp1 净漂 -0.10/-0.12 未压住）
+            yaw_drift = -0.8      # legacy exp1.3: 新增偏航角速度线性惩罚（无转向指令时生效）
             # contact 
             feet_contact_forces = -0.01
             # vel tracking
-            tracking_lin_vel = 2.2  # exp1.3: 1.8→2.2 提升跟踪优先级
+            tracking_lin_vel = 2.2  # legacy exp1.3: 1.8→2.2 提升跟踪优先级
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5  # lin_z; ang x,y
             low_speed = 0.2
             track_vel_hard = 0.5
             # base pos
             default_joint_pos = 1.0
-            orientation = 1.2     # exp1.1: 1.0->1.2 微调（-y 漂伴随左倾，roll 姿态保持协同纠偏）
+            orientation = 1.2     # legacy exp1.1: 1.0->1.2 微调（-y 漂伴随左倾，roll 姿态保持协同纠偏）
             feet_rotation = 0.3
             base_height = 0.2
             base_acc = 0.2
             # energy
-            action_smoothness = -0.008  # exp1.4: -0.002→-0.008 压制真机右踝roll 5.5~6.5Hz 输出振荡（二阶差分对高频灵敏度∝f⁴）
+            action_smoothness = -0.008  # legacy exp1.4: -0.002→-0.008 压制真机右踝roll 5.5~6.5Hz 输出振荡（二阶差分对高频灵敏度∝f⁴）
             torques = -8e-9
             dof_vel = -2e-8
             dof_acc = -1e-7
