@@ -146,9 +146,10 @@ class X1DHStandCfg(LeggedRobotCfg):
             'lumbar_roll_joint': 0.0,
             'lumbar_pitch_joint': 0.03,
             'left_shoulder_pitch_joint': 0.03,  'right_shoulder_pitch_joint': 0.03,
-            'left_shoulder_roll_joint': -0.06,  'right_shoulder_roll_joint': -0.06,
+            'left_shoulder_roll_joint': -0.06,  'right_shoulder_roll_joint': 0.06,
             'left_shoulder_yaw_joint': 0.18,    'right_shoulder_yaw_joint': 0.18,
-            'left_elbow_pitch_joint': 0.34,     'right_elbow_pitch_joint': 0.34,
+            # 右肩roll/右肘pitch：URDF 轴镜像但原 limit 未配套，exp0.2 修复 limit 后 default 同步镜像取反
+            'left_elbow_pitch_joint': 0.34,     'right_elbow_pitch_joint': -0.34,
             'left_elbow_yaw_joint': 0.0,        'right_elbow_yaw_joint': 0.0,
             'left_wrist_pitch_joint': 0.0,      'right_wrist_pitch_joint': 0.0,
             'left_wrist_roll_joint': 0.0,       'right_wrist_roll_joint': 0.0,
@@ -363,6 +364,13 @@ class X1DHStandCfg(LeggedRobotCfg):
         target_feet_height_max = 0.06
         feet_to_ankle_distance = 0.041
         cycle_time = 0.7
+
+        # ---- Phase 2: mocap 参考轨迹（2b：全身查同一段轨迹，腿臂同帧推进天然同拍；False=2a 回退）----
+        # 段周期来自 ref_lib.pt（walk_norm 1.143s / walk_turn 1.242s / walk_slow 1.484s），
+        # use_mocap_ref=True 时行走 env 的 _get_phase 逐 env 用所在段周期，cycle_time 仅站立/回退时生效
+        use_mocap_ref = True
+        mocap_full_body = True    # 全身查表（决策 2026-09-03：跳过 2a 直接 2b，见 plan.md §4.2）
+        mocap_ref_file = '{LEGGED_GYM_ROOT_DIR}/resources/motions/processed/ref_lib.pt'
         # if true negative total rewards are clipped at zero (avoids early termination problems)
         only_positive_rewards = True
         # tracking reward = exp(-error*sigma)
@@ -370,7 +378,8 @@ class X1DHStandCfg(LeggedRobotCfg):
         max_contact_force = 700  # forces above this value are penalized
         
         class scales:
-            ref_joint_pos = 2.2
+            # exp0.2: 2.2→1.8，上半身从常数变动态 mocap 目标，先降压防摆臂跟踪压制步态
+            ref_joint_pos = 1.8
             feet_clearance = 1.
             feet_contact_number = 2.0
             # gait

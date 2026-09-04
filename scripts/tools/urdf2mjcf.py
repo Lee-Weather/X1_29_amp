@@ -25,18 +25,34 @@ SCENE_XML = os.path.join(MJCF_DIR, "x1_29dof_scene.xml")
 
 
 def main():
-    model = mujoco.MjModel.from_xml_path(URDF)  # auto-injects base_link_free_joint
+    # mujoco 3.11 加载 URDF 时 root link 固定（不再自动注入 freejoint）：
+    # 先编译出 29 hinge，再对 saveLastXML 的文本注入 base freejoint
+    model = mujoco.MjModel.from_xml_path(URDF)
 
     n_hinge = sum(1 for i in range(model.njnt)
                   if model.jnt_type[i] == mujoco.mjtJoint.mjJNT_HINGE)
-    n_free = sum(1 for i in range(model.njnt)
-                 if model.jnt_type[i] == mujoco.mjtJoint.mjJNT_FREE)
     print(f"URDF load OK: nq={model.nq} nbody={model.nbody} nmesh={model.nmesh}, "
-          f"hinges={n_hinge} free={n_free}")
-    assert n_hinge == 29 and n_free == 1 and model.nq == 36
+          f"hinges={n_hinge}")
+    assert n_hinge == 29 and model.nq == 29
 
     os.makedirs(MJCF_DIR, exist_ok=True)
-    mujoco.mj_saveLastXML(RAW_XML, model)
+    tmp_raw = RAW_XML + ".tmp"
+    mujoco.mj_saveLastXML(tmp_raw, model)
+
+    # 文本注入 base_link freejoint
+    xml = open(tmp_raw).read()
+    anchor = '<body name="base_link">'
+    assert anchor in xml, "raw xml 中找不到 base_link body"
+    xml = xml.replace(anchor, anchor + '\n      <joint name="base_link_free_joint" type="free"/>', 1)
+    with open(RAW_XML, "w") as f:
+        f.write(xml)
+    os.remove(tmp_raw)
+
+    chk = mujoco.MjModel.from_xml_path(RAW_XML)
+    n_free = sum(1 for i in range(chk.njnt)
+                 if chk.jnt_type[i] == mujoco.mjtJoint.mjJNT_FREE)
+    print(f"raw OK: nq={chk.nq} hinges=29 free={n_free}")
+    assert chk.nq == 36 and n_free == 1
 
     scene = f"""<?xml version="1.0" encoding="utf-8"?>
 <mujoco model="x1_29dof_scene">

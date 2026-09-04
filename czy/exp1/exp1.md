@@ -8,6 +8,7 @@
 | 编号 | 日期 | 摘要 | 状态 | Task ID | GM账号 | checkpoint |
 | --- | --- | --- | --- | --- | --- | --- |
 | exp0 | 2026-09-02 | 29DOF 全身控制基线：env 腿部按名索引 + config 29 维（obs 98/action 29/priv 141）+ 29DOF PM URDF + 上半身默认位姿锁定，从零 L4 训练至 5800 轮额度耗尽；回放摔倒（min_h 0.092m）+ 严重过冲（0.4 段 286%）+ 停不住，站立段完美 | ❌未达标（已测试） | TASK_20260902_185(停)→186 | limxmtcm6wjlso8ce4@emalupe.com（账号3，已耗尽） | model_5800.pt |
+| exp0.2 | 2026-09-03 | Phase 2b mocap 参考行走：ref_lib.pt 三段（0000/0002/0026，50Hz）全身查表（腿臂同源同拍）+ 逐段步频相位 + URDF 右臂限位镜像修复；本机 A6000 从零训练 | 🔄训练中 | 本机（RTX A6000 48G） | 无（本机） | 待产 |
 
 ---
 
@@ -144,3 +145,54 @@
 2. 回放诊断：FIX_COMMAND 小步长（0.1/0.2 m/s）扫描，定位过冲起始的指令幅值
 3. 若仍摔倒：怀疑上半身行走抖动，冻结上半身动作（回放时 action 上半身置 0）对照验证
 4. 续训需切换账号 4~8（账号3 已耗尽）
+
+---
+
+## 实验 exp0.2：Phase 2b mocap 参考轨迹行走（2026-09-03 起）
+
+> 方案与执行细节见 [plan.md](../plan/plan.md)（§0 总体设计、§4.1 Step2/3 执行结果、§4.2 决策更新、周期 2 倍速 bug 修复记录）。
+
+### 1. 上一实验结果与教训
+
+> exp0 ❌：训练日志健康但回放摔倒+过冲+停不住。教训：上半身锁定默认位姿虽站立完美，但行走时无摆臂参考、全身协调无从谈起；训练-回放背离需固定指令基准回放暴露。
+> exp0.2 的直接动机：给行走一个**真实的全身步态参考**（人走路必摆臂）。
+
+### 2. 本轮修改目标
+
+- 目标1：2b 全身查表收敛——不摔倒、Mean reward ≥ 120、ep_len ≥ 2100（对齐 exp0 验收线）
+- 目标2：摆臂自然——回放目视 + 上半身 dof 轨迹 vs mocap 参考相关系数（验收新增项）
+- 目标3：步速张力可控——腿部 ref 跟踪误差与 tracking 速度达标并存（0.4 段过冲 ≤ exp0 的 286% 量级）
+- 验收标准：目标1 必须满足；目标2/3 记录量级，决定是否启用 plan.md §4.2 后备（时间缩放/腿部降权）
+
+### 3. 修改内容（相对 exp0）
+
+| 类别 | 内容 |
+|---|---|
+| 新增 `scripts/tools/prep_mocap_ref.py` | GMR→ref_lib.pt：重排 Isaac 序/翻转6关节/120→50Hz/自相关周期/锚点/整周期切段/限位 clip |
+| 新增产物 `resources/motions/processed/ref_lib.pt` | 3 段 2620 帧@50Hz：walk_norm←0000(T=972,P=57,A=19) / walk_slow←0002(T=965,P=74,A=48) / walk_turn←0026(T=683,P=62,A=19) |
+| env `x1_dh_stand_env.py` | `_init_mocap_lib`/`_current_seg_id`（指令分档）/`_get_phase` 逐段周期/`compute_ref_state` 查表（mocap_full_body=True 全身）+ `ref_action=2*(ref-default)` 修正 |
+| config | `use_mocap_ref=True`、`mocap_full_body=True`（直接 2b，跳过 2a）、`ref_joint_pos` 2.2→1.8、右臂 default 镜像取反 |
+| URDF | 右肩 roll limit [−2,0]→[0,2]、右肘 pitch [0,2]→[−2,0]（§0.2，训练 clamp 隐患） |
+| 单测 | `test_mocap_ref_lookup.py` 6 项（含周期语义防 2 倍速回归）全过 |
+
+### 4. 风险与预案
+
+- mocap 步速 ~1.2 m/s vs 低指令 0.4 m/s 步速张力 → 后备：腿部 ref 降权 / 时间缩放帧推进（plan §4.2）
+- `feet_*` 相位判据 vs mocap 真实触地微错位（双支撑带 13% vs 实际 ~20%）→ 回放观察，必要时放宽 |sin|<0.1
+
+### 5. 训练参数
+
+| 项 | 值 |
+|---|---|
+| 训练方式 | **本机从零**（RTX A6000 48G，非云端） |
+| max_iterations | 6000 |
+| num_envs | 4096（config 默认） |
+| run 目录 | `logs/x1_dh_stand/exported_data/2026-09-03_17-18-51exp0_2_mocap2b/` |
+| 启动命令 | `source conda.sh && conda activate F1 && cd ~/czy/X1_29_amp && pip install -e . && xvfb-run -a python -u humanoid/scripts/train.py --task=x1_dh_stand --run_name=exp0_2_mocap2b --headless --max_iterations=6000` |
+| 启动验证点 | ✅ `[MOCP] 段: walk_norm(T=972,P=57,A=19), walk_slow(T=965,P=74,A=48), walk_turn(T=683,P=62,A=19)`（P=周期 bug 修复后正确值，修复前为 114/148/124） |
+
+> ⚠️ 部署注意（post-201-5 惯例）：本机/远程每次启动前必须在项目根 `conda activate F1 && pip install -e .`——humanoid editable 会被其他实验目录（如 `czy/exp1/exp_*/`）的重装覆盖，启动日志 traceback 的 import 路径可当场鉴别。
+
+### 6. 结果
+
+> 🔄 训练中（2026-09-03 17:18 启动，ETA ~7h）。GPU 27.3GB/48GB、util 43%。日志 `/tmp/train_exp02.log`。验收=exp1.md 目标 1+2+3（§2），回放用固定指令基准（速度阶梯）+ 上半身 dof vs mocap 相关系数。

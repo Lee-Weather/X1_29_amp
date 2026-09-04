@@ -139,12 +139,31 @@ class X1DHStandEnv(LeggedRobot):
             stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
             self.phase_length_buf[stand_command] = 0 # set this as 0 for which env is standing
             # self.gait_start is rand 0 or 0.5
+            # Phase2: 行走 env 的周期逐 env 取所在参考段的 gait_period（mocap 步频），站立/回退用全局 cycle_time
+            if getattr(self, "use_mocap_ref", False):
+                self.seg_id = self._current_seg_id()   # 每次按当前指令即时算（_get_phase 会先于 compute_ref_state 被调用）
+                cycle_time = torch.full_like(self.phase_length_buf, cycle_time, dtype=torch.float)
+                # 相位周期（秒）= 段周期帧数 / 库帧率（如 57帧/50Hz = 1.143s）
+                cycle_time[~stand_command] = \
+                    self.seg_period_frames[self.seg_id][~stand_command].float() / self.seg_fps[self.seg_id][~stand_command]
             phase = (self.phase_length_buf * self.dt / cycle_time + self.gait_start) * (~stand_command)
         else:
             phase = self.episode_length_buf * self.dt / cycle_time + self.gait_start
 
         # phase continue increase，if want robot stand, set 0
         return phase
+
+    def _current_seg_id(self):
+        """指令 → 参考段索引（向量化）。|wz|>0.15→walk_turn；|vx|<0.25→walk_slow；else→walk_norm"""
+        wz = self.commands[:, 2]
+        vx = self.commands[:, 0]
+        turn = self.seg_names.index("walk_turn")
+        slow = self.seg_names.index("walk_slow")
+        norm = self.seg_names.index("walk_norm")
+        seg_id = torch.full_like(self.phase_length_buf, norm)
+        seg_id[torch.abs(vx) < 0.25] = slow
+        seg_id[torch.abs(wz) > 0.15] = turn
+        return seg_id
 
     def _get_stance_mask(self):
         # return float mask 1 is stance, 0 is swing
@@ -288,10 +307,29 @@ class X1DHStandEnv(LeggedRobot):
             sin_pos_r.unsqueeze(1) * self.swing_delta_right
 
         self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
-        
+
+        # ---- Phase 2a/2b: mocap 查表（行走 env 按相位取所在段帧；站立 env 不覆盖，锁默认）----
+        if getattr(self, "use_mocap_ref", False):
+            stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
+            walk = ~stand_command
+            if walk.any():
+                self.seg_id = self._current_seg_id()
+                # 相位 → 段内帧（锚点对齐 stance 语义；段长取模循环）
+                frames = phase[walk] * self.seg_period_frames[self.seg_id[walk]].float() \
+                    + self.seg_anchor[self.seg_id[walk]].float()
+                frames = torch.remainder(frames.long(), self.seg_len[self.seg_id[walk]])
+                q_ref = self.mocap_q[frames, self.seg_id[walk]]        # (N_walk, 29) 绝对角
+                if self.mocap_full_body:   # 2b：全身查表
+                    self.ref_dof_pos[walk] = q_ref
+                else:                      # 2a：只覆盖上半身，腿部保留正弦
+                    tmp = self.ref_dof_pos[walk]
+                    tmp[:, self.upper_dof_indices] = q_ref[:, self.upper_dof_indices]
+                    self.ref_dof_pos[walk] = tmp
+
         # if use_ref_actions=True, action += ref_action
-        self.ref_action = 2 * self.ref_dof_pos
-        
+        # Phase2: ref_dof_pos 含 mocap 绝对角，ref_action 须为相对默认的增量
+        self.ref_action = 2 * (self.ref_dof_pos - self.default_dof_pos)
+
         # self.ref_dof_pos set ref dof pos for swing leg, ref_dof_pos=0 for stance leg
         self.ref_dof_pos += self.default_dof_pos
 
@@ -578,6 +616,52 @@ class X1DHStandEnv(LeggedRobot):
         self.swing_delta_right = swing[6:]
         # 打印 dof 索引表，供 config 逐关节参数（armature 等）人工核对
         print("[DOF] " + ", ".join("{}:{}".format(i, n) for i, n in enumerate(self.dof_names)))
+
+        # ---- Phase 2: mocap 参考轨迹库（2a：上半身查表）----
+        self.use_mocap_ref = getattr(self.cfg.rewards, "use_mocap_ref", False)
+        self.mocap_full_body = getattr(self.cfg.rewards, "mocap_full_body", False)
+        if self.use_mocap_ref:
+            self._init_mocap_lib()
+
+    def _init_mocap_lib(self):
+        """加载 ref_lib.pt（prep_mocap_ref.py 产物），按段建查表结构"""
+        import os
+        path = self.cfg.rewards.mocap_ref_file.format(LEGGED_GYM_ROOT_DIR=self.cfg.commands.__class__.__module__ and os.environ.get("LEGGED_GYM_ROOT_DIR", ""))
+        # 兜底：config 路径里的占位符按仓库根展开
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+        if "{LEGGED_GYM_ROOT_DIR}" in path or not os.path.isfile(path):
+            path = os.path.join(root, "resources/motions/processed/ref_lib.pt")
+        lib = torch.load(path, map_location=self.device)
+        assert list(lib["walk_norm"]["dof_names"]) == list(self.dof_names), \
+            "ref_lib dof_names 与 env 不一致，请重跑 prep_mocap_ref.py"
+
+        self.seg_names = sorted(lib.keys())
+        self.upper_dof_indices = torch.tensor(
+            [i for i, n in enumerate(self.dof_names)
+             if "hip" not in n and "knee" not in n and "ankle" not in n],
+            dtype=torch.long, device=self.device)
+        # 统一张量：q(T_max, num_seg, 29) 便于按段 gather；period_frames/anchor/len 每段一个值
+        T_max = max(lib[s]["dof_pos"].shape[0] for s in self.seg_names)
+        num_seg = len(self.seg_names)
+        q_all = torch.zeros(T_max, num_seg, len(self.dof_names), device=self.device)
+        # 周期帧数按【库帧率 fps】换算（与 anchor/查表索引同单位），
+        # 不能用 policy dt：mocap_q 是 50Hz 帧，用 0.01s 换算会 2 倍速播放
+        self.seg_period_frames = torch.zeros(num_seg, dtype=torch.long, device=self.device)
+        self.seg_fps = torch.zeros(num_seg, dtype=torch.float, device=self.device)
+        self.seg_anchor = torch.zeros(num_seg, dtype=torch.long, device=self.device)
+        self.seg_len = torch.zeros(num_seg, dtype=torch.long, device=self.device)
+        for k, s in enumerate(self.seg_names):
+            q = lib[s]["dof_pos"]                       # (T,29) float32 gym 序
+            self.seg_len[k] = q.shape[0]
+            self.seg_fps[k] = float(lib[s].get("fps", 50))
+            self.seg_period_frames[k] = int(round(lib[s]["gait_period"] * float(lib[s].get("fps", 50))))
+            self.seg_anchor[k] = int(lib[s]["phase_anchor_frame"])
+            q_all[:q.shape[0], k] = q
+        self.mocap_q = q_all
+        print("[MOCP] 段: " + ", ".join(
+            "{}(T={},P={},A={})".format(s, int(self.seg_len[k]), int(self.seg_period_frames[k]),
+                                        int(self.seg_anchor[k]))
+            for k, s in enumerate(self.seg_names)))
 
 # ================================================ Rewards ================================================== #
     def _reward_ref_joint_pos(self):
