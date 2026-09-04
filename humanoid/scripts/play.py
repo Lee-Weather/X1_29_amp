@@ -33,6 +33,7 @@
 
 import os
 import csv
+import math
 import cv2
 import numpy as np
 from isaacgym import gymapi
@@ -279,10 +280,21 @@ def play(args):
     # 诊断输出目录（CSV 不依赖 RENDER，始终输出）
     diag_out_dir = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'play_output')
     os.makedirs(diag_out_dir, exist_ok=True)
-    diag = {k: [] for k in ["command_x", "base_vel_x", "base_vel_y", "base_vel_z", "base_vel_yaw",
+    # 对齐真机 walk_diag 列（czy/real_data/13rt/walk_diag_*.csv）：基座 + 逐关节 action/pos/vel/effort/pos_des_raw
+    # 保留 base_vel_x/y/z 旧列（isaac-diag-eval 与既有分析依赖）
+    dof_names = [n[:-6] if n.endswith('_joint') else n for n in env.dof_names]  # 去掉 _joint 后缀做列名
+    diag = {k: [] for k in ["phase_sin", "phase_cos", "cycle_time", "smoothed_speed", "active_stage",
+                            "cmd_linear_x", "cmd_linear_y", "cmd_angular_z",
+                            "base_euler_x", "base_euler_y", "base_euler_z",
+                            "base_ang_vel_x", "base_ang_vel_y", "base_ang_vel_z",
+                            "base_vel_x", "base_vel_y", "base_vel_z",
                             "base_height", "base_pos_x", "base_pos_y", "base_yaw",
-                            "foot_z_l", "foot_z_r",
-                            "foot_force_l", "foot_force_r"]}
+                            "foot_z_l", "foot_z_r", "foot_force_l", "foot_force_r",
+                            "command_x"]}
+    for jn in dof_names:
+        for q in ["action", "pos", "vel", "effort", "pos_des_raw"]:
+            diag[f"{q}_{jn}_joint"] = []
+    clip_count = 0  # 力矩限幅累计计数（对应真机 clip_count）
 
     # =========== 新增：初始化速度累加器 ===========
     vel_sum = 0.0       # 速度总和
@@ -318,13 +330,39 @@ def play(args):
         # =========== 每步诊断采集（与 RENDER 无关） ===========
         real_cmd_x = env.commands[robot_index, 0].item()
         bq = env.root_states[robot_index, 3:7]
+        # 四元数 (x,y,z,w) -> roll/pitch/yaw（与 ang_vel 一同对齐真机 imu 列）
+        qx, qy, qz, qw = bq[0].item(), bq[1].item(), bq[2].item(), bq[3].item()
+        roll = math.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
+        pitch = math.asin(max(-1.0, min(1.0, 2.0 * (qw * qy - qz * qx))))
         base_yaw = torch.atan2(2.0 * (bq[3] * bq[2] + bq[0] * bq[1]),
                                1.0 - 2.0 * (bq[1] * bq[1] + bq[2] * bq[2]))
+        # 步态相位：直接用 env._get_phase（exp0.2 逐段周期 + 站立归零，与观测同源）
+        ph = env._get_phase()[robot_index].item() % 1.0
+        diag["phase_sin"].append(math.sin(2 * math.pi * ph))
+        diag["phase_cos"].append(math.cos(2 * math.pi * ph))
+        # 有效周期：mocap 行走段 = 段周期帧数/库帧率；站立/回退 = 全局 cycle_time
+        eff_cycle = env_cfg.rewards.cycle_time
+        if getattr(env, "use_mocap_ref", False):
+            walking = torch.norm(env.commands[robot_index, :3]).item() > env_cfg.commands.stand_com_threshold
+            if walking:
+                sid = int(env._current_seg_id()[robot_index].item())
+                eff_cycle = env.seg_period_frames[sid].item() / env.seg_fps[sid].item()
+        diag["cycle_time"].append(eff_cycle)
+        diag["smoothed_speed"].append(0.0)
+        diag["active_stage"].append(0)
+        diag["cmd_linear_x"].append(real_cmd_x)
+        diag["cmd_linear_y"].append(env.commands[robot_index, 1].item())
+        diag["cmd_angular_z"].append(env.commands[robot_index, 2].item())
         diag["command_x"].append(real_cmd_x)
+        diag["base_euler_x"].append(roll)
+        diag["base_euler_y"].append(pitch)
+        diag["base_euler_z"].append(base_yaw.item())
+        diag["base_ang_vel_x"].append(env.base_ang_vel[robot_index, 0].item())
+        diag["base_ang_vel_y"].append(env.base_ang_vel[robot_index, 1].item())
+        diag["base_ang_vel_z"].append(env.base_ang_vel[robot_index, 2].item())
         diag["base_vel_x"].append(current_vel_x)
         diag["base_vel_y"].append(env.base_lin_vel[robot_index, 1].item())
         diag["base_vel_z"].append(env.base_lin_vel[robot_index, 2].item())
-        diag["base_vel_yaw"].append(env.base_ang_vel[robot_index, 2].item())
         diag["base_height"].append(env.root_states[robot_index, 2].item())
         diag["base_pos_x"].append(env.root_states[robot_index, 0].item())
         diag["base_pos_y"].append(env.root_states[robot_index, 1].item())
@@ -333,6 +371,17 @@ def play(args):
         diag["foot_z_r"].append(env.rigid_state[robot_index, right_foot_idx, 2].item())
         diag["foot_force_l"].append(env.contact_forces[robot_index, left_foot_idx, 2].item())
         diag["foot_force_r"].append(env.contact_forces[robot_index, right_foot_idx, 2].item())
+        # 逐关节：策略输出（缩放前）、位置、速度、实际力矩、期望位置（lagged action + default）
+        for k, jn in enumerate(dof_names):
+            diag[f"action_{jn}_joint"].append(env.actions[robot_index, k].item())
+            diag[f"pos_{jn}_joint"].append(env.dof_pos[robot_index, k].item())
+            diag[f"vel_{jn}_joint"].append(env.dof_vel[robot_index, k].item())
+            tau = env.torques[robot_index, k].item()
+            diag[f"effort_{jn}_joint"].append(tau)
+            if abs(tau) >= env.torque_limits[k].item() - 1e-6:
+                clip_count += 1
+            pos_des = (env.lagged_actions_scaled[robot_index, k] + env.default_dof_pos[robot_index, k]).item()
+            diag[f"pos_des_raw_{jn}_joint"].append(pos_des)
         # =====================================================
         if RENDER:
             frame_count += 1
@@ -378,7 +427,7 @@ def play(args):
                 # y/z 方向与偏航速度（诊断缓冲区最新值）
                 current_vel_y = diag["base_vel_y"][-1]
                 current_vel_z = diag["base_vel_z"][-1]
-                current_vel_yaw = diag["base_vel_yaw"][-1]
+                current_vel_yaw = diag["base_ang_vel_z"][-1]
 
                 # 接触力数据（使用 feet_indices，与诊断一致）
                 left_force = diag["foot_force_l"][-1]
@@ -499,20 +548,25 @@ def play(args):
     # =========== 回放结束：写出诊断 CSV + 分段 Summary ===========
     dt = env_cfg.sim.dt * env_cfg.control.decimation
     csv_path = os.path.join(diag_out_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{run_name_str if RENDER else 'test'}_isaac_diag.csv")
-    header = ["step", "time_s", "command_x", "base_vel_x", "base_vel_y", "base_vel_z", "base_vel_yaw",
-              "base_height", "base_pos_x", "base_pos_y", "base_yaw",
-              "foot_z_l", "foot_z_r", "foot_force_l", "foot_force_r"]
+    base_cols = ["step", "time_s", "phase_sin", "phase_cos", "cycle_time", "smoothed_speed", "active_stage",
+                 "cmd_linear_x", "cmd_linear_y", "cmd_angular_z",
+                 "base_euler_x", "base_euler_y", "base_euler_z",
+                 "base_ang_vel_x", "base_ang_vel_y", "base_ang_vel_z",
+                 "base_vel_x", "base_vel_y", "base_vel_z",
+                 "base_height", "base_pos_x", "base_pos_y", "base_yaw",
+                 "foot_z_l", "foot_z_r", "foot_force_l", "foot_force_r", "command_x", "clip_count"]
+    joint_cols = [f"{q}_{jn}_joint" for jn in dof_names for q in ["action", "pos", "vel", "effort", "pos_des_raw"]]
+    header = base_cols + joint_cols
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(header)
         for i in range(len(diag["command_x"])):
-            writer.writerow([i, round(i * dt, 6), diag["command_x"][i],
-                             diag["base_vel_x"][i], diag["base_vel_y"][i], diag["base_vel_z"][i],
-                             diag["base_vel_yaw"][i], diag["base_height"][i],
-                             diag["base_pos_x"][i], diag["base_pos_y"][i], diag["base_yaw"][i],
-                             diag["foot_z_l"][i], diag["foot_z_r"][i],
-                             diag["foot_force_l"][i], diag["foot_force_r"][i]])
+            row = [i, round(i * dt, 6)] + [diag[c][i] for c in base_cols[2:] if c != "clip_count"]
+            row.append(clip_count)  # 累计限幅计数（每行重复累计值）
+            row += [diag[c][i] for c in joint_cols]
+            writer.writerow(row)
     print(f"Saved diagnostic CSV -> {csv_path}")
+    print(f"Torque clip count (total, all dofs x steps): {clip_count}")
 
     print("\n===== Speed Profile Summary =====")
     acc = 0
