@@ -9,6 +9,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | exp0 | 2026-09-02 | 29DOF 全身控制基线：env 腿部按名索引 + config 29 维（obs 98/action 29/priv 141）+ 29DOF PM URDF + 上半身默认位姿锁定，从零 L4 训练至 5800 轮额度耗尽；回放摔倒（min_h 0.092m）+ 严重过冲（0.4 段 286%）+ 停不住，站立段完美 | ❌未达标（已测试） | TASK_20260902_185(停)→186 | limxmtcm6wjlso8ce4@emalupe.com（账号3，已耗尽） | model_5800.pt |
 | exp0.2 | 2026-09-03 | Phase 2b mocap 参考行走：ref_lib.pt 三段（0000/0002/0026，50Hz）全身查表（腿臂同源同拍）+ 逐段步频相位 + URDF 右臂限位镜像修复；本机先训（从零 ~1600 iter 形态健康）→切云端 L20+L4 双任务并行（被手动停）→换账号5 L4 重训；回放摔倒 ~4 次/40s + 指令跟随差（cmd=0 自走 0.5m/s） | ❌未达标（已测试） | TASK_20260904_006(L20,停)/007(L4,停)/008(L4·账号5)/073(回放) | limxmtjqbym1pg0fra@emalupe.com（账号5） | model_6000.pt |
+| exp0.3 | 2026-09-04 | 根因导向微调（不用 AMP）：压动作幅度（action_scale 0.3+smoothness×2.5+clip 3）治 bang-bang 前扑 + gait 调度改出生/结尾站立治停不住 + ref_joint_pos 加压制参考架空 | 待训练 | — | — | — |
 
 ---
 
@@ -233,8 +234,8 @@
 
 **③ 站立吸引子缺失（停不住）**
 - S0/S3（cmd=0，phase_sin 全程=0、cycle=0.7）机器人仍行走 0.27/0.43 m/s，超速步占比 58%/92%
-- 训练指令 lin_vel_x=[-0.4,1.2] 均匀采样，|cmd|<0.05（站立阈值）仅 ~6% env × 25s 重采样 → 站立模式欠训练
-- 奖励漏洞延续 exp0：tracking 高斯在 cmd=0、v=0.4 时仍得 53% 分（σ=0.25）；low_speed 不罚超速；only_positive_rewards 进一步弱化负激励
+- 训练 gait 调度 `["walk_omni","stand","walk_omni"]`：站立段仅占 ~20%（2-3s/12.5s 周期）且**出生段必为行走**（generate_gait_time 的 gait_time[:,0]=0 → spawn 即采样行走指令）→ "出生+站立"组合零训练（恰是回放 S0 分布）；中段站立仅 2-3s，"滑行穿越站立段"代价低于"停-再起步"
+- 奖励漏洞延续 exp0：tracking 高斯在 cmd=0、v=0.4 时仍得 53% 分（σ=0.25）；low_speed 超速分支得 0 分不罚；only_positive_rewards 进一步弱化负激励
 
 **④ 相位时钟与实际迈步脱钩（次要）**
 - 时钟周期 1.14s vs 实际触地节律 ~0.6-1.0s；站立段 phase=0 仍迈步 → 节律由策略自身反馈维持（obs 含历史 action），时钟未成为主导
@@ -247,3 +248,105 @@
 2. **治理停不住**（治③）：指令采样 30% 概率 cmd=0；low_speed 改对称罚（超 1.2×cmd 线性罚）
 3. **锁相**（治④）：stance_mask vs 实际触地一致性奖励，或 feet_contact_number 权重再调
 4. **中期**：参照 amp_architecture_notes.md §6 引入 AMP 判别器替代逐关节 ref 惩罚（治②的根治路径）
+
+---
+
+## 实验 exp0.3：根因导向微调——压幅度 + 治停不住（2026-09-04）
+
+### 1. 上一实验结果与教训
+
+> 数据：exp0.2 model_6000 本机增强诊断回放（174 列 CSV，40s 速度阶梯）
+> - 摔倒 5 次/40s，全部同签名：vx 0.5→1.5-2.3 m/s 失控 → pitch +0.9 → 双离地前扑；存活间隔仅 3.6-6s
+> - des 半幅 = mocap 参考 3-3.7 倍（右 hip_pitch 1.55/0.42 rad），corr(des,pos)≈0，实动仅参考一半
+> - cmd=0 段仍走 0.27-0.43 m/s（超速步 58%/92%）；站立组合"出生+cmd=0"训练分布外
+>
+> **核心教训**：
+> - 证明了：mocap 全身查表机制本身正确（cycle_time 三档实测无误），但**参考被 bang-bang 动作架空**——策略输出 2-3 倍幅度、低 kp(30/35) 实动塌缩、期望与实动脱钩
+> - 否定了："reward 103 + ep_len 2210 = 接近达标"的乐观解读——4096 env 平均摊薄了边缘不稳定
+> - 本轮要解决：① 动作幅度失控（直接死因）② 站立吸引子缺失（停不住）
+
+### 2. 本轮修改目标
+
+- 目标1：回放 40s **零摔倒**（exp0.2 为 5 次）
+- 目标2：cmd=0 段 |vx| < 0.15 m/s（停得住）
+- 目标3：0.4/0.6 稳态跟踪进入 80-120% 区间（exp0.2 过冲 135%/189%）
+- 验收标准：训练 reward ≥ 105、ep_len ≥ 2300；回放 corr(des,pos) hip_pitch ≥ 0.5、clip_count < 200（exp0.2: 848）
+
+### 3. 修改内容
+
+#### 修改一：压制动作幅度（治②→①，核心）
+
+| 参数 | 旧值 | 新值 | 说明 |
+| --- | --- | --- | --- |
+| control.action_scale | 0.5 | 0.3 | des 偏移幅度直接 -40%：hip des ±1.5→±0.9 rad，可跟踪性大增 |
+| rewards.action_smoothness | -0.008 | -0.02 | 已含 Σ\|a\| L1 + 一阶/二阶差分，×2.5 直击 bang-bang |
+| normalization.clip_actions | 100. | 3. | env.step 入口硬界原始 action（legged_robot L118），des 偏移上限 = 3×0.3 = ±0.9 rad |
+
+**理由**：实动/mocap 幅度比仅 0.47-0.64、corr≈0 说明策略用"大幅甩"换部分实动；把输出幅度压到参考可实现范围，ref_joint_pos 与 tracking 才能形成有效梯度。clip=3 与 init_noise_std=1.0 兼容（±3σ 内），PPO log_prob 用截断前分布计算，梯度正常。
+
+#### 修改二：gait 调度与站立奖励（治③）
+
+| 参数 | 旧值 | 新值 | 说明 |
+| --- | --- | --- | --- |
+| commands.gait | ["walk_omni","stand","walk_omni"] | ["stand","walk_omni","stand"] | 出生段必为行走是"出生+站立"零训练的根源；改后覆盖回放 S0（出生站立）与 S3（走后停）两个分布 |
+| commands.gait_time_range.stand | [2,3] | [3,5] | 站立段更长（"滑行穿越"代价升高） |
+| commands.gait_time_range.walk_omnidirectional | [4,6] | [6,9] | 平衡占比：站立 ~20%→~26%，行走数据不稀释过度 |
+| rewards.scales.stand_still | 2.5 | 3.5 | 加强站立吸引子；仅 stand_command 时非零，不伤行走段 |
+| _reward_low_speed 超速分支 | 0. | -1.0 | 对称罚：低速 -1.0 / 超速 -1.0 / 达标 +1.2（掩码 cmd>0.05 不变） |
+
+**理由**：根因③实测——S0/S3 全程 phase=0 语义生效但仍自走。出生+站立为分布外组合是 S0 失败的直接解释；站立段 2-3s 太短使"滑行穿越"成为省事解。
+
+#### 修改三：强化 mocap 参考约束（治②"架空"）
+
+| 参数 | 旧值 | 新值 | 说明 |
+| --- | --- | --- | --- |
+| rewards.scales.ref_joint_pos | 1.8 | 2.4 | 压幅度后参考可实现（des ≈ ±0.6-0.9 vs mocap ±0.45），升权让查表参考真正成为主导目标 |
+
+**理由**：exp0.2 参考跟踪被架空时 ref_joint_pos 仅 +0.178；修改一落地后参考与输出同量级，此时加压才有意义（否则逼策略追不可实现目标）。
+
+### 4. 修改文件
+
+- `humanoid/envs/x1/x1_dh_stand_config.py`：control.action_scale、normalization.clip_actions、commands.gait、gait_time_range、rewards.scales.{action_smoothness, stand_still, ref_joint_pos}
+- `humanoid/envs/x1/x1_dh_stand_env.py`：`_reward_low_speed` 超速分支 0→-1.0
+
+### 5. 训练参数
+
+| 参数 | 值 |
+| --- | --- |
+| 训练方式 | 从零 |
+| GM账号 | 待定（账号5 limxmtjqbym1pg0fra，查余额） |
+| max_iterations | 6000 |
+| save_interval | 100 |
+| num_envs | 4096 |
+| seed | 5 |
+| learning_rate | 3e-4（同 exp0.2，未动） |
+| 算力 | L4（ESKU000003，¥4.11/h） |
+| 镜像 | BJX00000001, V000124 |
+| 代码仓库 | https://github.com/Lee-Weather/X1_29_amp.git, main |
+| 启动命令 | `gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand --run_name=exp0_3_amplitude --headless --max_iterations=6000` |
+
+### 6. 预期与验收
+
+**目标指标**（训练日志，6000 轮）：
+
+| 指标 | exp0.2 实测 | 本轮目标 | 异常信号 |
+| --- | --- | --- | --- |
+| Mean reward | 103 | ≥ 105 | < 90（幅度压制过狠） |
+| Mean episode length | 2210 | ≥ 2300 | < 2000 |
+| ref_joint_pos | +0.178 | ≥ +0.3 | < +0.1（参考仍架空） |
+| tracking_lin_vel | — | ≥ 0.7 | < 0.5 |
+
+**回放验收**（速度阶梯 0→0.4→0.6→0，增强诊断 CSV）：
+
+| 指标 | exp0.2 实测 | 本轮目标 |
+| --- | --- | --- |
+| 摔倒次数/40s | 5 | **0** |
+| cmd=0 段 \|vx\| | 0.27-0.43 | < 0.15 |
+| 0.4/0.6 稳态跟踪 | 135%/189% | 80-120% |
+| corr(des,pos) hip_pitch | ≈0 | ≥ 0.5 |
+| clip_count | 848 | < 200 |
+| 触地节律 vs cycle_time | 0.6-1.0s vs 1.14s | 1.14s ±20% |
+
+### 7. 实验结果
+
+待训练完成后补充。
