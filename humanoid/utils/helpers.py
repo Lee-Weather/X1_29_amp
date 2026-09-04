@@ -197,6 +197,12 @@ def get_args():
             "help": "Saved model checkpoint number. If -1: will load the last checkpoint. Overrides config file if provided.",
         },
         {
+            "name": "--checkpoint_url_b64",
+            "type": str,
+            "default": None,
+            "help": "URL-safe Base64 of a signed checkpoint download URL; downloads the checkpoint at runtime (cloud replay mode).",
+        },
+        {
             "name": "--headless",
             "action": "store_true",
             "default": False,

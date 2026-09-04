@@ -180,9 +180,34 @@ def play(args):
         env.set_camera(env_cfg.viewer.pos, env_cfg.viewer.lookat)
 
 
+    # ---- 云端回放模式：--checkpoint_url_b64 = 签名下载 URL 的 URL-safe Base64 ----
+    # 约定：checkpoint 与 model_isaac_csv.pt 都落在 logs/<experiment_name>/gm_play/（SDK 已识别的 PT 目录）
+    gm_mode = getattr(args, "checkpoint_url_b64", None) is not None
+    gm_play_dir = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'gm_play')
+
+    if gm_mode:
+        import base64 as _b64
+        import re as _re
+        import urllib.request as _urlreq
+        os.makedirs(gm_play_dir, exist_ok=True)
+        ckpt_url = _b64.urlsafe_b64decode(args.checkpoint_url_b64.encode()).decode()
+        m = _re.search(r"model_(\d+)\.pt", ckpt_url)
+        ckpt_num = int(m.group(1)) if m else 0
+        gm_ckpt_path = os.path.join(gm_play_dir, f"model_{ckpt_num}.pt")
+        if not os.path.exists(gm_ckpt_path):
+            print(f"[gm] downloading checkpoint -> {gm_ckpt_path}")
+            _urlreq.urlretrieve(ckpt_url, gm_ckpt_path)
+        print(f"[gm] checkpoint ready: {gm_ckpt_path}")
+
     # load policy
-    train_cfg.runner.resume = True
-    ppo_runner, train_cfg, _ = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
+    if gm_mode:
+        # 下载路径不在 exported_data 下，绕过 make_alg_runner 内部 resume，手动加载
+        train_cfg.runner.resume = False
+        ppo_runner, train_cfg, _ = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg, log_root=None)
+        ppo_runner.load(gm_ckpt_path, load_optimizer=False)
+    else:
+        train_cfg.runner.resume = True
+        ppo_runner, train_cfg, _ = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
     policy = ppo_runner.get_inference_policy(device=env.device)
     
     # export policy as a jit module (used to run it from C++)
@@ -498,6 +523,21 @@ def play(args):
 
     if RENDER:
         video.release()
+
+    # ---- 云端回放（gm）模式产物打包：视频平铺 + CSV 打包为 model_isaac_csv.pt ----
+    if gm_mode:
+        import shutil
+        import time as _time
+        if RENDER and os.path.exists(video_filepath):
+            flat_video = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'play_output.mp4')
+            shutil.copyfile(video_filepath, flat_video)
+            print(f"[gm] video copied -> {flat_video}")
+        pack_path = os.path.join(gm_play_dir, "model_isaac_csv.pt")
+        with open(csv_path, "rb") as f:
+            torch.save({"bytes": f.read(), "filename": os.path.basename(csv_path)}, pack_path)
+        print(f"[gm] packed CSV -> {pack_path}")
+        print("[gm] keeping files for SDK scan/upload (60s)...")
+        _time.sleep(60)
 
 if __name__ == '__main__':
     EXPORT_POLICY = False
