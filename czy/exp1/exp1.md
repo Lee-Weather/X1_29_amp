@@ -9,7 +9,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | exp0 | 2026-09-02 | 29DOF 全身控制基线：env 腿部按名索引 + config 29 维（obs 98/action 29/priv 141）+ 29DOF PM URDF + 上半身默认位姿锁定，从零 L4 训练至 5800 轮额度耗尽；回放摔倒（min_h 0.092m）+ 严重过冲（0.4 段 286%）+ 停不住，站立段完美 | ❌未达标（已测试） | TASK_20260902_185(停)→186 | limxmtcm6wjlso8ce4@emalupe.com（账号3，已耗尽） | model_5800.pt |
 | exp0.2 | 2026-09-03 | Phase 2b mocap 参考行走：ref_lib.pt 三段（0000/0002/0026，50Hz）全身查表（腿臂同源同拍）+ 逐段步频相位 + URDF 右臂限位镜像修复；本机先训（从零 ~1600 iter 形态健康）→切云端 L20+L4 双任务并行（被手动停）→换账号5 L4 重训；回放摔倒 ~4 次/40s + 指令跟随差（cmd=0 自走 0.5m/s） | ❌未达标（已测试） | TASK_20260904_006(L20,停)/007(L4,停)/008(L4·账号5)/073(回放) | limxmtjqbym1pg0fra@emalupe.com（账号5） | model_6000.pt |
-| exp0.3 | 2026-09-04 | 根因导向微调（不用 AMP）：压动作幅度（action_scale 0.3+smoothness×2.5+clip 3）治 bang-bang 前扑 + gait 调度改出生/结尾站立治停不住 + ref_joint_pos 加压制参考架空 | 待训练 | — | — | — |
+| exp0.3 | 2026-09-04 | 根因导向微调（不用 AMP）：压动作幅度（action_scale 0.3+smoothness×2.5+clip 3）治 bang-bang 前扑 + gait 调度改出生/结尾站立治停不住 + ref_joint_pos 加压制参考架空 | 训练中 | TASK_20260904_086(L4·账号6) | limxmtjqd2kli2rjom@emalupe.com（账号6） | — |
 
 ---
 
@@ -314,7 +314,8 @@
 | 参数 | 值 |
 | --- | --- |
 | 训练方式 | 从零 |
-| GM账号 | 待定（账号5 limxmtjqbym1pg0fra，查余额） |
+| GM账号 | limxmtjqd2kli2rjom@emalupe.com（账号6） |
+| 任务 ID | **TASK_20260904_086**（2026-09-04 16:12 启动，L4） |
 | max_iterations | 6000 |
 | save_interval | 100 |
 | num_envs | 4096 |
@@ -322,7 +323,7 @@
 | learning_rate | 3e-4（同 exp0.2，未动） |
 | 算力 | L4（ESKU000003，¥4.11/h） |
 | 镜像 | BJX00000001, V000124 |
-| 代码仓库 | https://github.com/Lee-Weather/X1_29_amp.git, main |
+| 代码仓库 | https://github.com/Lee-Weather/X1_29_amp.git, main @ 017463d |
 | 启动命令 | `gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand --run_name=exp0_3_amplitude --headless --max_iterations=6000` |
 
 ### 6. 预期与验收
