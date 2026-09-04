@@ -914,8 +914,8 @@ class X1DHStandEnv(LeggedRobot):
         # Assign rewards based on conditions
         # Speed too low
         reward[speed_too_low] = -1.0
-        # Speed too high
-        reward[speed_too_high] = 0.
+        # Speed too high（exp0.3: 0→-1.0 对称罚，堵超速白赚漏洞）
+        reward[speed_too_high] = -1.0
         # Speed within desired range
         reward[speed_desired] = 1.2
         # Sign mismatch has the highest priority

@@ -175,7 +175,7 @@ class X1DHStandCfg(LeggedRobotCfg):
                    'wrist_pitch_joint': 0.5, 'wrist_roll_joint': 0.5}
 
         # action scale: target angle = actionScale * action + defaultAngle
-        action_scale = 0.5
+        action_scale = 0.3  # exp0.3: 0.5→0.3 压制 bang-bang（exp0.2 des 半幅达 mocap 3-3.7 倍、corr(des,pos)≈0）
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 10  # 50hz 100hz
 
@@ -330,13 +330,14 @@ class X1DHStandCfg(LeggedRobotCfg):
         # Vers: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         num_commands = 4
         resampling_time = 25.  # time before command are changed[s]
-        gait = ["walk_omnidirectional","stand","walk_omnidirectional"] # gait type during training
+        gait = ["stand","walk_omnidirectional","stand"] # gait type during training
+        # exp0.3: 出生/结尾站立（原 [walk,stand,walk] 出生必行走 → "出生+cmd=0"零训练，恰是回放 S0 分布）
         # proportion during whole life time
         gait_time_range = {"walk_sagittal": [2,6],
                            "walk_lateral": [2,6],
                            "rotate": [2,3],
-                           "stand": [2,3],
-                           "walk_omnidirectional": [4,6]}
+                           "stand": [3,5],   # exp0.3: [2,3]→[3,5] 站立段加长
+                           "walk_omnidirectional": [6,9]}  # exp0.3: [4,6]→[6,9] 站立占比 ~20%→~26%
 
         heading_command = False  # if true: compute ang vel command from heading error
         stand_com_threshold = 0.05 # if (lin_vel_x, lin_vel_y, ang_vel_yaw).norm < this, robot should stand
@@ -379,7 +380,8 @@ class X1DHStandCfg(LeggedRobotCfg):
         
         class scales:
             # exp0.2: 2.2→1.8，上半身从常数变动态 mocap 目标，先降压防摆臂跟踪压制步态
-            ref_joint_pos = 1.8
+            # exp0.3: 1.8→2.4 压幅度后参考可实现（des≈±0.6-0.9 vs mocap±0.45），升压让查表参考主导
+            ref_joint_pos = 2.4
             feet_clearance = 1.
             feet_contact_number = 2.0
             # gait
@@ -406,12 +408,12 @@ class X1DHStandCfg(LeggedRobotCfg):
             base_height = 0.2
             base_acc = 0.2
             # energy
-            action_smoothness = -0.008  # legacy exp1.4: -0.002→-0.008 压制真机右踝roll 5.5~6.5Hz 输出振荡（二阶差分对高频灵敏度∝f⁴）
+            action_smoothness = -0.02  # exp0.3: -0.008→-0.02 压 bang-bang（含 |a| L1 + 一/二阶差分）；legacy exp1.4 曾 -0.002→-0.008 压真机踝振荡
             torques = -8e-9
             dof_vel = -2e-8
             dof_acc = -1e-7
             collision = -1.
-            stand_still = 2.5
+            stand_still = 3.5  # exp0.3: 2.5→3.5 加强站立吸引子（仅 stand_command 时非零，不伤行走）
             # limits
             dof_vel_limits = -1
             dof_pos_limits = -10.
@@ -426,7 +428,7 @@ class X1DHStandCfg(LeggedRobotCfg):
             quat = 1.
             height_measurements = 5.0
         clip_observations = 100.
-        clip_actions = 100.
+        clip_actions = 3.  # exp0.3: 100→3 env.step 入口硬界原始 action（des 偏移上限 3×0.3=±0.9 rad）
 
 
 class X1DHStandCfgPPO(LeggedRobotCfgPPO):
