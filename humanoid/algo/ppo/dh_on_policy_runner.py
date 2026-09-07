@@ -38,6 +38,7 @@ import statistics
 from collections import deque
 from datetime import datetime
 from .dh_ppo import DHPPO
+from .dh_ppo_amp import DHPPOAMP  # noqa: F401  exp1: algorithm_class_name eval 注入需要
 from .actor_critic_dh import ActorCriticDH
 from humanoid.algo.vec_env import VecEnv
 from torch.utils.tensorboard import SummaryWriter
@@ -74,6 +75,14 @@ class DHOnPolicyRunner:
         self.alg: DHPPO = alg_class(actor_critic, device=self.device, **self.alg_cfg)
         self.num_steps_per_env = self.cfg["num_steps_per_env"]
         self.save_interval = self.cfg["save_interval"]
+
+        # exp1: AMP 组件按 env 实际维度构建（61 = ang3 + dof_pos29 + dof_vel29；dt 注入 demo 步进与 style 缩放）
+        if hasattr(self.alg, "configure_amp"):
+            self.alg.configure_amp(
+                disc_obs_dim=3 + 2 * self.env.num_dof,
+                num_envs=self.env.num_envs,
+                dt=self.env.dt,
+            )
 
         # init storage and model
         self.alg.init_storage(
@@ -213,6 +222,11 @@ class DHOnPolicyRunner:
         self.writer.add_scalar(
             "Loss/state_estimator", locs["mean_state_estimator_loss"], locs["it"]
         )
+        # exp1: AMP 监控指标（止损线见 exp1.md §6：demo→+1/agent→-1 渐近不清零，style 中后期 >0.3）
+        amp_stats = getattr(self.alg, "amp_stats", None)
+        if amp_stats:
+            for k, v in amp_stats.items():
+                self.writer.add_scalar("AMP/" + k, v, locs["it"])
         self.writer.add_scalar("Loss/learning_rate", self.alg.learning_rate, locs["it"])
         self.writer.add_scalar("Policy/mean_noise_std", mean_std.item(), locs["it"])
         self.writer.add_scalar("Perf/total_fps", fps, locs["it"])
@@ -277,6 +291,12 @@ class DHOnPolicyRunner:
             #   f"""{'Mean episode length/episode:':>{pad}} {locs['mean_trajectory_length']:.2f}\n""")
 
         log_string += ep_string
+        if amp_stats:
+            log_string += (
+                f"""{'AMP disc (loss/gp):':>{pad}} {amp_stats['disc_loss']:.4f} / {amp_stats['disc_grad_penalty']:.4f}\n"""
+                f"""{'AMP score (agent/demo):':>{pad}} {amp_stats['disc_score']:.3f} / {amp_stats['disc_demo_score']:.3f}\n"""
+                f"""{'AMP style reward (walk):':>{pad}} {amp_stats['style_reward']:.5f}\n"""
+            )
         log_string += (
             f"""{'-' * width}\n"""
             f"""{'Total timesteps:':>{pad}} {self.tot_timesteps}\n"""
@@ -288,16 +308,18 @@ class DHOnPolicyRunner:
         print(log_string)
 
     def save(self, path, infos=None):
-        torch.save(
-            {
-                "model_state_dict": self.alg.actor_critic.state_dict(),
-                "optimizer_state_dict": self.alg.optimizer.state_dict(),
-                "es_optimizer_state_dict": self.alg.state_estimator_optimizer.state_dict(),
-                "iter": self.it,
-                "infos": infos,
-            },
-            path,
-        )
+        saved_dict = {
+            "model_state_dict": self.alg.actor_critic.state_dict(),
+            "optimizer_state_dict": self.alg.optimizer.state_dict(),
+            "es_optimizer_state_dict": self.alg.state_estimator_optimizer.state_dict(),
+            "iter": self.it,
+            "infos": infos,
+        }
+        # exp1: 判别器 + 归一化统计量（buffer 注册随 state_dict）+ 独立优化器，断电续训不丢判别器
+        if getattr(self.alg, "amp_discriminator", None) is not None:
+            saved_dict["amp_discriminator_state_dict"] = self.alg.amp_discriminator.state_dict()
+            saved_dict["amp_disc_optimizer_state_dict"] = self.alg.disc_optimizer.state_dict()
+        torch.save(saved_dict, path)
 
     def load(self, path, load_optimizer=True):
         loaded_dict = torch.load(path)
@@ -305,6 +327,12 @@ class DHOnPolicyRunner:
         if load_optimizer:
             self.alg.optimizer.load_state_dict(loaded_dict["optimizer_state_dict"])
             self.alg.state_estimator_optimizer.load_state_dict(loaded_dict["es_optimizer_state_dict"])
+        # exp1: 判别器状态恢复（无 AMP 键的旧 ckpt 自动跳过——DHPPO ckpt 兼容加载）
+        if getattr(self.alg, "amp_discriminator", None) is not None \
+                and "amp_discriminator_state_dict" in loaded_dict:
+            self.alg.amp_discriminator.load_state_dict(loaded_dict["amp_discriminator_state_dict"])
+            if load_optimizer and "amp_disc_optimizer_state_dict" in loaded_dict:
+                self.alg.disc_optimizer.load_state_dict(loaded_dict["amp_disc_optimizer_state_dict"])
         self.current_learning_iteration = loaded_dict["iter"]
         return loaded_dict["infos"]
 

@@ -584,6 +584,10 @@ class X1DHStandEnv(LeggedRobot):
             self.obs_history[i][env_ids] *= 0
         for i in range(self.critic_history.maxlen):
             self.critic_history[i][env_ids] *= 0
+
+        # exp1: AMP 历史整窗待填充（下一步 _sample_amp 用复位后状态覆盖，防旧 episode 样本污染）
+        if getattr(self, "amp_enabled", False):
+            self._amp_hist_fill[env_ids] = True
         
     
     def _init_buffers(self):
@@ -622,6 +626,12 @@ class X1DHStandEnv(LeggedRobot):
         self.mocap_full_body = getattr(self.cfg.rewards, "mocap_full_body", False)
         if self.use_mocap_ref:
             self._init_mocap_lib()
+
+        # ---- exp1: AMP 判别器特征管线（demo 预计算 + 每步采样，独立于 use_mocap_ref）----
+        amp_cfg = getattr(self.cfg, "amp", None)
+        self.amp_enabled = bool(getattr(amp_cfg, "enabled", False))
+        if self.amp_enabled:
+            self._init_amp(amp_cfg)
 
     def _init_mocap_lib(self):
         """加载 ref_lib.pt（prep_mocap_ref.py 产物），按段建查表结构"""
@@ -662,6 +672,139 @@ class X1DHStandEnv(LeggedRobot):
             "{}(T={},P={},A={})".format(s, int(self.seg_len[k]), int(self.seg_period_frames[k]),
                                         int(self.seg_anchor[k]))
             for k, s in enumerate(self.seg_names)))
+
+    # ================= exp1: AMP 判别器特征管线 =================
+    def _init_amp(self, amp_cfg):
+        """加载 ref_lib.pt 预计算 demo 特征 (T_max, num_seg, 61)：
+        61 = root_ang_vel(3, 体轴) + dof_pos(29, 绝对角) + dof_vel(29)
+        速度不存盘加载现算（robolab 惯例）：dof_vel 前向差分、root_ang_vel 四元数差分精确 log 映射
+        """
+        import os
+        path = getattr(amp_cfg, "demo_file", "")
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+        if (not path) or "{LEGGED_GYM_ROOT_DIR}" in path or not os.path.isfile(path):
+            path = os.path.join(root, "resources/motions/processed/ref_lib.pt")
+        lib = torch.load(path, map_location=self.device)
+
+        self.amp_disc_steps = int(getattr(amp_cfg, "disc_obs_steps", 3))
+        feat_dim = 3 + 2 * self.num_dof
+        self.amp_feat_dim = feat_dim
+
+        seg_names = sorted(lib.keys())
+        # 启动硬断言：demo dof 顺序与 env 一致（notes §4-4，拦截两侧特征错位）
+        for s in seg_names:
+            assert list(lib[s]["dof_names"]) == list(self.dof_names), \
+                "AMP ref_lib 段 {} dof_names 与 env 不一致，请重跑 prep_mocap_ref.py".format(s)
+
+        num_seg = len(seg_names)
+        T_max = max(lib[s]["dof_pos"].shape[0] for s in seg_names)
+        demo_feat = torch.zeros(T_max, num_seg, feat_dim, device=self.device)
+        seg_len = torch.zeros(num_seg, dtype=torch.long, device=self.device)
+        seg_stride = torch.zeros(num_seg, dtype=torch.long, device=self.device)
+
+        for k, s in enumerate(seg_names):
+            q = lib[s]["dof_pos"].float().to(self.device)   # (T,29) 绝对角
+            fps = float(lib[s].get("fps", 50))
+            T = q.shape[0]
+            seg_len[k] = T
+            # demo 窗口步进（库帧）：控制 dt × 库帧率；不足 1 帧时取 1（agent 侧隔步采样补偿时间尺度）
+            seg_stride[k] = max(1, round(self.dt * fps))
+
+            # dof_vel 前向差分，末帧沿用
+            dq = torch.zeros_like(q)
+            dq[:-1] = (q[1:] - q[:-1]) * fps
+            dq[-1] = dq[-2]
+
+            # root_ang_vel（体轴）：q_rel = q_t^{-1} ⊗ q_{t+1}，精确 log 映射 ×fps，末帧沿用
+            rot = lib[s]["root_rot_wxyz"].float().to(self.device)  # (T,4) wxyz
+            quat = rot[:, [1, 2, 3, 0]]                             # → xyzw
+            quat = quat / quat.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+            conj = torch.cat([-quat[:-1, :3], quat[:-1, 3:4]], dim=-1)
+            ax, ay, az, aw = conj[:, 0], conj[:, 1], conj[:, 2], conj[:, 3]
+            bx, by, bz, bw = quat[1:, 0], quat[1:, 1], quat[1:, 2], quat[1:, 3]
+            q_rel = torch.stack([
+                aw * bx + ax * bw + ay * bz - az * by,
+                aw * by - ax * bz + ay * bw + az * bx,
+                aw * bz + ax * by - ay * bx + az * bw,
+                aw * bw - ax * bx - ay * by - az * bz,
+            ], dim=-1)                                              # (T-1,4) 体轴相对旋转
+            vec = q_rel[:, :3]
+            n = vec.norm(dim=-1).clamp(min=1e-8)
+            angle = 2.0 * torch.atan2(n, q_rel[:, 3])
+            ang = torch.zeros(T, 3, device=self.device)
+            ang[:-1] = vec / n.unsqueeze(-1) * (angle * fps).unsqueeze(-1)
+            ang[-1] = ang[-2]
+
+            demo_feat[:T, k, 0:3] = ang
+            demo_feat[:T, k, 3:3 + self.num_dof] = q
+            demo_feat[:T, k, 3 + self.num_dof:] = dq
+
+        self._amp_demo_feat = demo_feat
+        self._amp_seg_len = seg_len
+        self._amp_seg_stride = seg_stride
+        self._amp_num_seg = num_seg
+
+        # agent 侧隔步采样：控制 dt × 库帧率 < 1 时，agent 窗口每 agent_stride 步滚动一次，
+        # 使两侧窗口真实时间跨度对齐（如 dt=0.01/fps=50：demo 3 帧=0.04s，agent 每 2 步取点=0.04s）
+        ref_fps = float(lib[seg_names[0]].get("fps", 50))
+        frames_per_step = self.dt * ref_fps
+        self._amp_agent_stride = max(1, round(1.0 / frames_per_step)) if frames_per_step > 0 else 1
+        self._amp_step_ctr = 0
+
+        # agent 侧 3 步环形历史；出生/复位后整窗填当前态（防 reset 前样本污染，notes §4-7）
+        self._amp_hist = torch.zeros(self.num_envs, self.amp_disc_steps, feat_dim, device=self.device)
+        self._amp_hist_fill = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+        print("[AMP] demo 库 {} 段，特征 {} 维 × {} 步窗，dt {:.4f}，demo_stride {}，"
+              "agent_stride {}（窗口跨度 {:.3f}s vs demo {:.3f}s）".format(
+                  num_seg, feat_dim, self.amp_disc_steps, self.dt,
+                  seg_stride.tolist(), self._amp_agent_stride,
+                  (self.amp_disc_steps - 1) * self._amp_agent_stride * self.dt,
+                  (self.amp_disc_steps - 1) * seg_stride[0].item() / ref_fps))
+
+    def post_physics_step(self):
+        """exp1: AMP 特征在 super 之前采样（即 reset_idx 之前）——
+        本步特征属于刚执行完的动作（commands 尚未被 callback 重采，站立判定准确）；
+        死亡 env 的 terminal 状态也是合法 agent 样本；复位历史整窗填充见 _amp_hist_fill
+        """
+        if getattr(self, "amp_enabled", False):
+            self._sample_amp()
+        super().post_physics_step()
+
+    def _sample_amp(self):
+        self.gym.refresh_actor_root_state_tensor(self.sim)
+        base_quat = self.root_states[:, 3:7]
+        ang = quat_rotate_inverse(base_quat, self.root_states[:, 10:13])
+        feat = torch.cat([ang, self.dof_pos, self.dof_vel], dim=1)   # (N,61)
+
+        # 隔步滚动历史（与 demo 帧距时间尺度对齐，见 _init_amp；滚动步 clone 防重叠切片自赋值）
+        self._amp_step_ctr += 1
+        if self._amp_step_ctr % self._amp_agent_stride == 0:
+            self._amp_hist[:, :-1] = self._amp_hist[:, 1:].clone()
+            self._amp_hist[:, -1] = feat
+        fill = self._amp_hist_fill
+        if fill.any():
+            self._amp_hist[fill] = feat[fill].unsqueeze(1).expand(-1, self.amp_disc_steps, -1)
+            self._amp_hist_fill[fill] = False
+
+        demo = self._sample_amp_demo()
+        stand = torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold
+        self.extras["amp"] = {
+            "disc_obs": self._amp_hist,        # (N,S,61) 原始特征
+            "disc_demo_obs": demo,             # (N,S,61)
+            "stand_mask": stand,               # (N,) bool
+        }
+
+    def _sample_amp_demo(self):
+        """每步每 env 随机抽（段, 起始帧）取 S 步窗——与相位解耦的纯风格匹配（random_fetch 风格）"""
+        N = self.num_envs
+        seg = torch.randint(0, self._amp_num_seg, (N,), device=self.device)
+        stride = self._amp_seg_stride[seg]
+        max_start = (self._amp_seg_len[seg] - (self.amp_disc_steps - 1) * stride - 1).clamp(min=0)
+        start = (torch.rand(N, device=self.device) * (max_start + 1).float()).long()
+        frames = torch.stack(
+            [start + j * stride for j in range(self.amp_disc_steps)], dim=1)   # (N,S)
+        seg_idx = seg.unsqueeze(1).expand(-1, self.amp_disc_steps)
+        return self._amp_demo_feat[frames, seg_idx]                            # (N,S,61)
 
 # ================================================ Rewards ================================================== #
     def _reward_ref_joint_pos(self):
@@ -912,8 +1055,9 @@ class X1DHStandEnv(LeggedRobot):
         reward = torch.zeros_like(self.base_lin_vel[:, 0])
 
         # Assign rewards based on conditions
-        # Speed too low
-        reward[speed_too_low] = -1.0
+        # Speed too low（exp1: -1.0→-2.0 治 exp0.3 原地踏步局部最优——步态形奖励白拿但 tracking σ=5 太平，
+        # 踏步净收益为正；配合 σ 5→20 与 low_speed scale 0.2→1.0 让踏步净收益转负）
+        reward[speed_too_low] = -2.0
         # Speed too high（exp0.3: 0→-1.0 对称罚，堵超速白赚漏洞）
         reward[speed_too_high] = -1.0
         # Speed within desired range

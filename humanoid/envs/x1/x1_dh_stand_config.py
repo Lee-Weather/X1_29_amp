@@ -374,14 +374,17 @@ class X1DHStandCfg(LeggedRobotCfg):
         mocap_ref_file = '{LEGGED_GYM_ROOT_DIR}/resources/motions/processed/ref_lib.pt'
         # if true negative total rewards are clipped at zero (avoids early termination problems)
         only_positive_rewards = True
-        # tracking reward = exp(-error*sigma)
-        tracking_sigma = 5
+        # tracking reward = exp(-error^2*sigma)
+        tracking_sigma = 20  # exp1: 5→20 锐化——exp0.3 实测 cmd=0.4/v=0 踏步仍得 exp(-0.4²·5)=45% tracking 分；
+        # σ=20 后同条件 exp(-0.4²·20)=exp(-3.2)=0.04，踏步白拿漏洞堵死（配合 low_speed too-slow -2 与 scale 1.0）
         max_contact_force = 700  # forces above this value are penalized
         
         class scales:
             # exp0.2: 2.2→1.8，上半身从常数变动态 mocap 目标，先降压防摆臂跟踪压制步态
             # exp0.3: 1.8→2.4 压幅度后参考可实现（des≈±0.6-0.9 vs mocap±0.45），升压让查表参考主导
-            ref_joint_pos = 2.4
+            # exp1: 2.4→0.0 归零（用户拍板）——逐关节 L2 只管形态不管平移，恰给踏步发奖；
+            # 风格监督移交 AMP 判别器（保留则踏步白拿漏洞仍在且与 style 双重计分打架）
+            ref_joint_pos = 0.0
             feet_clearance = 1.
             feet_contact_number = 2.0
             # gait
@@ -399,7 +402,7 @@ class X1DHStandCfg(LeggedRobotCfg):
             tracking_lin_vel = 2.2  # legacy exp1.3: 1.8→2.2 提升跟踪优先级
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5  # lin_z; ang x,y
-            low_speed = 0.2
+            low_speed = 1.0  # exp1: 0.2→1.0 配合 tracking σ 锐化与 too-slow -2 罚，踏步净收益转负
             track_vel_hard = 0.5
             # base pos
             default_joint_pos = 1.0
@@ -418,6 +421,12 @@ class X1DHStandCfg(LeggedRobotCfg):
             dof_vel_limits = -1
             dof_pos_limits = -10.
             dof_torque_limits = -0.1
+
+    # ---- exp1: AMP 判别器（env 侧开关；算法侧超参见 X1DHStandCfgPPO.algorithm 的 amp_* 平铺键）----
+    class amp:
+        enabled = True      # 总开关：False → env 不产 extras["amp"]，DHPPOAMP 自动退化为纯 task 基线（消融用）
+        disc_obs_steps = 3  # 判别器时间窗（控制步），与 algorithm.amp_disc_obs_steps 保持一致
+        demo_file = ''      # 空 → resources/motions/processed/ref_lib.pt（与 use_mocap_ref 同源）
 
     class normalization:
         class obs_scales:
@@ -460,9 +469,23 @@ class X1DHStandCfgPPO(LeggedRobotCfgPPO):
         else:
             lin_vel_idx = X1DHStandCfg.env.single_num_privileged_obs * (X1DHStandCfg.env.c_frame_stack - 1) + X1DHStandCfg.env.single_linvel_index
 
+        # ---- exp1: AMP 判别器超参（FLAT 平铺键——class_to_dict 后作为 kwargs 直传 DHPPOAMP，
+        # 嵌套 class 会变 dict 导致 **kwargs 展开类型不符）。数值照抄 robolab X1 实测（29DOF 同构）----
+        amp_enabled = True              # 与 env cfg amp.enabled 双闸，任一 False 即纯 task
+        amp_disc_obs_steps = 3          # 判别器时间窗：183 = 3 × 61（61 = ang3+dof_pos29+dof_vel29）
+        amp_disc_hidden_dims = [1024, 512]
+        amp_disc_lr = 1e-4              # 恒定（KL 自适应只作用 PPO 优化器）
+        amp_grad_penalty_scale = 10.0   # 梯度惩罚只加 demo 侧（AMP 论文标准）
+        amp_disc_buffer_size = 100      # 滑窗控制步 > rollout 窗 24，跨迭代混合防 stale
+        amp_style_reward_scale = 1.5    # style = dt × 1.5 × clamp(1-(D-1)²/4)，乘 dt 与控制频率解耦
+        amp_task_lerp = 0.6             # 融合 = 0.6·task + 0.4·style（站立 env 纯 task 不融合）
+        amp_disc_trunk_weight_decay = 1e-3
+        amp_disc_linear_weight_decay = 1e-1
+        amp_disc_max_grad_norm = 1.0
+
     class runner:
         policy_class_name = 'ActorCriticDH'
-        algorithm_class_name = 'DHPPO'
+        algorithm_class_name = 'DHPPOAMP'  # exp1: DHPPO→DHPPOAMP（runner eval 字符串注入，判别器随算法进训练流）
         num_steps_per_env = 24  # per iteration
         max_iterations = 6000  # number of policy updates
 
