@@ -39,7 +39,7 @@ from humanoid.algo import VecEnv
 from humanoid.algo import DHOnPolicyRunner
 
 from humanoid import LEGGED_GYM_ROOT_DIR, LEGGED_GYM_ENVS_DIR
-from .helpers import get_args, update_cfg_from_args, class_to_dict, get_load_path, set_seed, parse_sim_params
+from .helpers import get_args, update_cfg_from_args, class_to_dict, get_load_path, resolve_ckpt_path, set_seed, parse_sim_params
 from humanoid.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
 class TaskRegistry():
@@ -155,7 +155,14 @@ class TaskRegistry():
         runner = runner_class(env, all_cfg, log_dir, device=args.rl_device)
         #save resume path before creating a new log_dir
         resume = train_cfg.runner.resume
-        if resume:
+        ckpt_path = getattr(args, "ckpt_path", None)
+        if ckpt_path:
+            # 直连 checkpoint 加载（云端 resume 模式）：绕开 --resume 的 logs 目录扫描，
+            # 路径不存在时 resolve_ckpt_path 会在仓库内兜底搜索（适配挂载位置不确定性）
+            resume_path = resolve_ckpt_path(ckpt_path)
+            print(f"Loading model from ckpt_path: {resume_path}")
+            runner.load(resume_path, load_optimizer=False)
+        elif resume:
             # load previously trained model
             resume_path = get_load_path(log_root, load_run=train_cfg.runner.load_run, checkpoint=train_cfg.runner.checkpoint)
             print(f"Loading model from: {resume_path}")

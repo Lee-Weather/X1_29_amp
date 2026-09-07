@@ -136,6 +136,24 @@ def get_load_path(root, load_run=-1, checkpoint=-1):
     return load_path
 
 
+def resolve_ckpt_path(path):
+    """--ckpt_path 直连加载解析：精确路径优先；缺失时在仓库内搜 model_*.pt 兜底
+    （云端 checkpoint 挂载位置随 checkPointMountPath 配置而变，兜底消除不确定性）。
+    注意：仅在启动时调用一次，不会误捕训练中途新存的 ckpt。"""
+    import glob
+    if os.path.isfile(path):
+        return path
+    root = LEGGED_GYM_ROOT_DIR
+    cands = sorted(
+        glob.glob(os.path.join(root, "model_*.pt"))
+        + glob.glob(os.path.join(root, "*", "model_*.pt"))
+        + glob.glob(os.path.join(root, "logs", "**", "model_*.pt"), recursive=True))
+    if cands:
+        print("[CKPT] 指定路径 {} 不存在，仓库内兜底命中: {}".format(path, cands[-1]))
+        return cands[-1]
+    raise FileNotFoundError("checkpoint 未找到: {}（仓库内亦无 model_*.pt）".format(path))
+
+
 def update_cfg_from_args(env_cfg, cfg_train, args):
     # seed
     if env_cfg is not None:
@@ -201,6 +219,12 @@ def get_args():
             "type": str,
             "default": None,
             "help": "URL-safe Base64 of a signed checkpoint download URL; downloads the checkpoint at runtime (cloud replay mode).",
+        },
+        {
+            "name": "--ckpt_path",
+            "type": str,
+            "default": None,
+            "help": "Direct checkpoint path to warm-start from (cloud resume mode); bypasses --resume log-dir scanning. Optimizer state not loaded (fine-tune). Falls back to a repo-wide model_*.pt search if the path is missing.",
         },
         {
             "name": "--headless",

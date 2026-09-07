@@ -813,12 +813,10 @@ class X1DHStandEnv(LeggedRobot):
         demo = self._amp_demo_feat[frames, seg_idx]                            # (N,S,61)
 
         if stand_ratio > 0.0:
-            # 静立窗：随机段随机帧 q_t 重复 S 次，速度/角速度置 0
-            seg_s = torch.randint(0, self._amp_num_seg, (N,), device=self.device)
-            f_s = (torch.rand(N, device=self.device) * self._amp_seg_len[seg_s].float()).long()
-            q = self._amp_demo_feat[f_s, seg_s, 3:3 + self.num_dof]            # (N,29)
+            # 静立窗：default_dof_pos 位形重复 S 次，速度/角速度置 0
+            # exp1.1 曾用 mocap 随机帧 q_t——与 agent 站立位形不同，D 照样一票分类（exp1.md §10 归因）
             still = torch.zeros_like(demo)
-            still[:, :, 3:3 + self.num_dof] = q.unsqueeze(1)
+            still[:, :, 3:3 + self.num_dof] = self.default_dof_pos.view(1, 1, -1)
             mix = torch.rand(N, device=self.device) < stand_ratio
             demo = torch.where(mix.unsqueeze(1).unsqueeze(2), still, demo)
         return demo

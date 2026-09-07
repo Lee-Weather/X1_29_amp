@@ -477,7 +477,11 @@ class X1DHStandCfgPPO(LeggedRobotCfgPPO):
         amp_disc_lr = 5e-5              # exp1.1: 1e-4→5e-5——exp1 判别器 86 iter 碾压饱和死锁，降速给 policy 追赶窗口（配合 demo 侧混静立窗）
         amp_grad_penalty_scale = 10.0   # 梯度惩罚只加 demo 侧（AMP 论文标准）
         amp_disc_buffer_size = 100      # 滑窗控制步 > rollout 窗 24，跨迭代混合防 stale
-        amp_style_reward_scale = 1.5    # style = dt × 1.5 × clamp(1-(D-1)²/4)，乘 dt 与控制频率解耦
+        amp_style_reward_scale = 100   # exp1.2: 1.5→100——量纲修正：dt(0.01)×1.5=0.015 上限 vs task O(6)/步，
+                                       # style 梯度弱 60 倍被淹没（exp1/exp1.1 style 无影响力的隐藏根因）。
+                                       # 100 → 上限 1.0/步，梯度 0.5·(1-D)·1.0 与 task O(1) 同量级；
+                                       # 乘 dt 保留（控制频率解耦）。robolab task O(0.8) 无此问题
+                                       # 本地对照（64env×60iter）：ep_len/reward 与 1.5 完全一致（无破坏），style 0.001→0.055
         amp_task_lerp = 0.6             # 融合 = 0.6·task + 0.4·style（站立 env 纯 task 不融合）
         amp_disc_trunk_weight_decay = 1e-3
         amp_disc_linear_weight_decay = 1e-1

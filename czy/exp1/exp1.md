@@ -10,7 +10,9 @@
 | exp0 | 2026-09-02 | 29DOF 全身控制基线：env 腿部按名索引 + config 29 维（obs 98/action 29/priv 141）+ 29DOF PM URDF + 上半身默认位姿锁定，从零 L4 训练至 5800 轮额度耗尽；回放摔倒（min_h 0.092m）+ 严重过冲（0.4 段 286%）+ 停不住，站立段完美 | ❌未达标（已测试） | TASK_20260902_185(停)→186 | limxmtcm6wjlso8ce4@emalupe.com（账号3，已耗尽） | model_5800.pt |
 | exp0.2 | 2026-09-03 | Phase 2b mocap 参考行走：ref_lib.pt 三段（0000/0002/0026，50Hz）全身查表（腿臂同源同拍）+ 逐段步频相位 + URDF 右臂限位镜像修复；本机先训（从零 ~1600 iter 形态健康）→切云端 L20+L4 双任务并行（被手动停）→换账号5 L4 重训；回放摔倒 ~4 次/40s + 指令跟随差（cmd=0 自走 0.5m/s） | ❌未达标（已测试） | TASK_20260904_006(L20,停)/007(L4,停)/008(L4·账号5)/073(回放) | limxmtjqbym1pg0fra@emalupe.com（账号5） | model_6000.pt |
 | exp0.3 | 2026-09-04 | 根因导向微调（不用 AMP）：压动作幅度（action_scale 0.3+smoothness×2.5+clip 3）治 bang-bang 前扑 + gait 调度改出生/结尾站立治停不住 + ref_joint_pos 加压制参考架空；回放零摔倒+站得住+corr 0.91，但 0.4/0.6 原地踏步不平移 | ⚠️部分达标（已测试） | TASK_20260904_086(L4·账号6) | limxmtjqd2kli2rjom@emalupe.com（账号6） | model_6000.pt |
-| exp1 | 2026-09-07 | AMP 判别器引入（robolab 移植）：DHPPOAMP + LSGAN style reward lerp 融合替代 ref_joint_pos 逐关节 L2 + task 锐化（σ20/low_speed 加重）治踏步；demo 库复用 ref_lib.pt 三段差分特征 | 方案评审中 | — | — | — |
+| exp1 | 2026-09-07 | AMP 判别器引入（robolab 移植）：DHPPOAMP + LSGAN style reward lerp 融合替代 ref_joint_pos 逐关节 L2 + task 锐化（σ20/low_speed 加重）治踏步；demo 库复用 ref_lib.pt 三段差分特征。**失败**：D 86 iter 饱和死锁（agent -0.995 钉死、style≈0），1267 iter 止损（§8） | ❌失败 | TASK_20260907_046(停) | limxmtjqe95pp63oab（当前CLI） | — |
+| exp1.1 | 2026-09-07 | exp1 修复：demo 侧混静立窗 + disc_lr 减半。**失败**：it30 即钉死（比 exp1 更快），静立窗位形错配 + 平凡可分根因未除（§10）；083 转纯 task 锐化基线后亦被停 | ❌失败 | TASK_20260907_083(停) | 同上 | — |
+| exp1.2 | 2026-09-07 | §11 label smoothing 方案推翻（换 label 不解平凡可分）→ **exp0.2 底模 resume + AMP**：新增 --ckpt_path 直连加载；静立窗 default_dof_pos；**发现量纲淹没隐藏根因**（style 上限 0.015 vs task O(6)，梯度弱 60 倍）scale 1.5→100。本地验证：加载✅ style×54✅ 无破坏✅，D 分离待云端长程检验（§12） | ▶️待云端 | — | 同上 | 底模 czy/data/exp0.2/model_6000.pt |
 
 ---
 
@@ -716,6 +718,69 @@ rew(D) = clamp(1 - ((D - tau)²) / ((1 + tau)²) , min=0)
 #### 6. 与 083 基线的归因关系
 
 exp1.2 若成功（style>0 且步态自然），与 083（style≡0）的对比天然构成"AMP 有无贡献"的消融对——正好补上当初没买的消融，且同 task 锐化配置，归因干净。
+
+### 12. 实验 exp1.2（实际执行）：§11 方案推翻 → exp0.2 底模 + AMP + 量纲修复（2026-09-07）
+
+#### 1. §11 label smoothing 方案的推翻（未实施）
+
+用户质疑"这样相当于强行让判别器迭代？"触发机制重审，自查发现两处硬伤：
+
+- **公式算术错误**：声称的映射 `rew = clamp(1-(D-τ)²/(1+τ)²)`，D=-0.7 时实际 rew=0.32 而非 0（分母应为 (2τ)²）；锚点位置错误本身不致命，但暴露推导粗糙
+- **机制漏洞（根本）**：τ=0.7 只是把 D 钉死点从 -0.995 挪到 -0.7——分布**平凡可分**时换 label 不改变"D 几步就找到完美分离面"的事实，style 梯度照样趋零。用户质疑成立：这是强行移动钉死点，不是解锁
+
+#### 2. 方向转向：exp0.2 底模 + AMP（两阶段）
+
+用户提出：exp0.2（有平移粗走）作底模再叠 AMP。三底模对比后确认：
+
+| 底模 | 平移粗走 | AMP 适配性 | 结论 |
+| --- | --- | --- | --- |
+| exp0.2 | ✅ 有 | 手臂本就 mocap 塑形，agent 云贴近 demo 流形 | **选用** |
+| exp0.3 | ❌ 原地踏步 | AMP 特征 61 维不含根线速度，D 区分不了踏步 vs 前行 | 弃 |
+| 083 基线 | 未知（已停） | 纯 task 锐化产物，与 demo 距离同 exp1 问题 | 弃 |
+
+分工假设：task 锐化治前扑超速（exp0.2 老毛病），AMP 治 bang-bang 平滑度（exp0.3 老毛病），各失败模式有主。
+
+#### 3. 实施内容（4 文件）
+
+1. **`--ckpt_path` 直连加载**（helpers.py + task_registry.py）：绕开 `--resume` 的 logs 目录扫描（云端挂载不适配）；`resolve_ckpt_path` 路径缺失时仓库内 glob `model_*.pt` 兜底（适配 checkPointMountPath 不确定性）；`load_optimizer=False` 微调语义；无 AMP 键旧 ckpt 自动跳过（exp0.2 的 DHPPO ckpt 兼容加载进 DHPPOAMP）
+2. **静立窗位形修正**（x1_dh_stand_env.py）：mocap 随机帧 q_t → `default_dof_pos`（与 agent 站立位形一致，§10 归因①的正式修复）
+3. **style 量纲修复**（x1_dh_stand_config.py）：`amp_style_reward_scale` 1.5 → **100**，见下
+
+#### 4. 量纲淹没——三轮实验共同的隐藏根因（本轮最重要发现）
+
+本地 resume 验证（64 env × 30 iter）发现 style reward 仅 0.001，追查公式量纲：
+
+```
+style = dt(0.01) × scale(1.5) × rew  →  上限 0.015/步
+task（exp1 系列 FLAT config）         →  实测 O(6-15)/步
+融合 = 0.6·task + 0.4·style          →  style 梯度比 task 弱 60 倍以上
+```
+
+**robolab 原版同样公式但 task 仅 O(0.8)/步（track 1.0 + 罚项），style:task 量级比比我们高 ~7 倍**——移植时公式抄对了，但量级背景没对齐。这解释了为何 exp1/exp1.1 中 policy 从未被 style 驱动：D 分离只是让 rew≈0.05，量纲淹没让即使 rew=1 也无感。前三轮一直在修 D 侧，真正致命的是奖励侧。
+
+修复：scale=100（上限 1.0/步，d(style)/d(D)=0.5·(1-D)·1.0 与 task 梯度 O(1) 同量级；乘 dt 保留，控制频率解耦设计不变）。
+
+#### 5. 本地验证（exp0.2 model_6000.pt 底模，64 env）
+
+| 组 | iter | ep_len | mean_reward | style | agent/demo score |
+| --- | --- | --- | --- | --- | --- |
+| scale=1.5 | 30 | 280 | 6.06 | 0.001 | -0.94 / 0.97 |
+| scale=100 | 60 | 543 | 15.1 | **0.054** | -0.98 / 0.98 |
+| scale=1.5 对照 | 60 | 545 | 15.2 | 0.001 | -0.97 / 0.98 |
+
+判读：
+
+- **ckpt 加载 ✅**：iteration 6028/6029 确认载入，`--max_iterations` 增量语义正确
+- **量纲修复生效 ✅**：style 0.001→0.054（×54，精确符合 rew≈0.055 预测）
+- **无破坏性 ✅**：ep_len/reward 与对照完全一致（ep_len 翻倍是 task 锐化适应过程，与 style 无关——对照组同样翻倍）
+- **D 分离依旧 ⚠️**：agent score 60 iter 内未上移。exp0.2 粗走（bang-bang）vs mocap（平滑）在 183 维空间仍可分——这是分布事实，scale 修复只保证梯度存在，牵引效果需云端长程观察
+
+#### 6. 云端计划与判据
+
+4096 env（梯度噪声比本地小 64 倍）× 数千 iter，观察：
+
+- **健康形态**：agent score 缓慢上移（-0.98 → -0.8 …），style reward 爬升，ep_len 不崩
+- **失败形态**：agent score 钉死 -0.98 且 style 停在 ~0.05 不动 → 分布不重叠假说成立 → exp1.3 方向：D 网络缩容 / 特征降维（去 dof_vel 只留 dof_pos）/ demo 侧混入 agent 噪声增强
 
 ### 附：决策点（已拍板 2026-09-07）
 
