@@ -619,6 +619,104 @@ update_normalization()  # 事后更新（本批用旧统计量）
 
 **训练参数**：同 exp1（从零 / 6000 iter / L4 / seed 5），run_name=exp1_1_amp。
 
+### 10. exp1.1 结果（2026-09-07，修复失败，TASK_20260907_083 转任务基线）
+
+- 三卡并行启动：083 L20（运行中）/ 084 L4 / 085 4090（草稿未起）；用户决定只保留 083
+- **083 实测（it613，代码已验证为 exp1.1 commit 5e8511e）**：disc_score it30 即 -0.979、it613 -0.995 钉死，style 0.00013——**静立窗混合 + lr 减半均未防住死锁**（比 exp1 略快：86→30 iter 饱和）
+- 084/085 已停/未启，损失合计 ~¥0.8
+
+**exp1.1 失败的诚实归因**：
+
+1. **静立窗内容错了**：混入的是"冻结的迈步中间帧"（mocap 随机帧 q_t），而 agent 站立是默认位姿（dof≈default）——两侧关节构型不同，D 仍一票分类。正确做法要么用 default_dof_pos 造静立窗，要么干脆移除站立样本。
+2. **根因定位不完整（更重要）**：**早期随机策略本身就与 mocap 平凡可分**——乱动/摔倒/大幅抖动 vs 平滑周期步态，无需借助站立特征。死锁是"D 容量优势 + 早期分布天然分离"的结构性结果，堵任何一个单一特征都防不住。
+
+**083 的意外价值**：D 死锁 → style≡0 → 083 实际是**纯 task 锐化基线**（= 从没买的消融：σ20 / ref_joint_pos 0 / low_speed 1.0 / too-slow -2，无任何形态先验）。it613 reward 23.5↑ / ep_len 665，健康跑完 6000 iter 后直接回答："task 锐化单独能否逃出原地踏步？"——决定 AMP 定位（锦上添花 vs 必需品）。
+
+### 11. 实验 exp1.2：LSGAN label smoothing（2026-09-07 方案，待审批）
+
+> 晋级依据：exp1/exp1.1 两连败同根因（D 饱和→梯度消失），非超参问题，需结构性修复。exp1.1 修复（数据侧）失败，本轮转攻损失函数侧——这是 GAN 反判别器饱和的标准解，也是 §9 备选清单第一项。
+
+#### 1. 核心思路：不让 D 有"满分"可达
+
+exp1/exp1.1 的死锁链：
+
+```
+D(agent)→-1, D(demo)→+1 完全可达 → MSE→0 → 梯度→0 → D 冻结
+→ style = clamp(1-(D-1)²/4) 在 D=-1 时恒 0 → policy 无风格梯度 → 永不解锁
+```
+
+**label smoothing**：判别目标从 ±1 改为 ±τ（τ=0.7）。D 最优解变成 D(agent)=-0.7, D(demo)=+0.7——**loss 在此处有非零曲率**，梯度永不消失：
+
+- D 停在 -0.7 附近小幅波动 → 偶尔越过 -0.7 的 agent 窗（更像 demo 的）被推向更接近 demo 一侧
+- **风格排序信号始终存在**：style = clamp(1-(D-1)²/4)，D∈[-0.7,0.7] 时 style∈[0.20, 0.68]——policy 内部不同行为有持续的风格分差
+- 这正是 AMP 论文社区对 LSGAN 碾压的标准处置（StyleGAN/Pix2Pix 同思路）
+
+#### 2. 修改内容（2 文件，~15 行）
+
+**修改一：判别器损失目标 ±1 → ±0.7**（`dh_ppo_amp.py` update() 内 2 处）
+
+```python
+# 现：disc_loss = 0.5 * (mse(disc_score, -1) + mse(disc_demo_score, +1))
+amp_label_smooth = 0.7   # __init__ 传入，config 可调
+disc_loss = 0.5 * (mse(disc_score, -amp_label_smooth * ones)
+                   + mse(disc_demo_score, +amp_label_smooth * ones))
+```
+
+**修改二：style 奖励映射同步平移**（`amp_discriminator.py` predict_style_reward 1 处）
+
+LSGAN 映射 `clamp(1-(D-1)²/4)` 的"满分点"是 D=+1（demo 目标），agent 目标 D=-1 时 style=0。平移后 demo 目标 D=+0.7、agent 目标 D=-0.7：
+
+```python
+# 现：rew = clamp(1 - 0.25*(D-1)²)
+# 新：满分点对齐 demo 目标 τ=0.7
+rew = clamp(1 - 0.25*((D - tau) / 1.0)² * 1.0)   # 化简：clamp(1 - (D-0.7)²/4·(1/0.7²)·...)
+```
+
+精确推导（保持 agent 目标处 style=0、demo 目标处 style=1 的锚点语义）：
+
+```
+rew(D) = clamp(1 - ((D - tau)²) / ((1 + tau)²) , min=0)
+   D=tau=0.7 → rew=1（像 demo 得满分）
+   D=-0.7    → rew = 1 - (1.4²/1.4²) = 0（agent 目标得 0 分）
+   D=0（中性）→ rew = 1 - 0.49/1.96 = 0.75
+```
+
+值域仍 [0,1]、单调、单调方向不变——**GAE 尺度与 exp1 可比，无需调 lerp/scale**。
+
+**修改三（辅助，保留 exp1.1 修复）**：静立窗内容修正——mocap 随机帧 → `default_dof_pos`（与 agent 站立位形一致），stand_ratio 混合逻辑保留。数据侧对齐仍有意义（即使非主因），且不与 label smoothing 冲突。
+
+**不改**：disc_lr 保持 5e-5（label smoothing 已根治梯度消失，无需再压速度）；lerp 0.6 / 特征 61 维 / 缓冲 100 / 梯度惩罚 10 全部不动。
+
+#### 3. 预期判据（it<500 定生死）
+
+| 指标 | exp1/exp1.1 实测 | exp1.2 健康形态 |
+| --- | --- | --- |
+| disc_score (agent) | 30-86 iter 钉死 -0.995 | **稳定在 -0.7±0.15 波动，永不钉死** |
+| disc_demo_score | +1.000 钉死 | +0.7±0.15 波动 |
+| disc_loss | →0.0005 饱和 | **平衡于 0.05-0.3 区间不再下降** |
+| style_reward | 0.0001 恒 0 | **it<300 出现 >0.01 且随训练爬升** |
+| grad_penalty | →0 | 小正值持续 |
+
+**升级止损**：it500 仍钉死 ±0.99 → label smoothing 失效 → exp1.3 方向：D 网络缩容（[1024,512]→[256,128]，削容量优势）或两阶段训练（前 1000 iter 冻结 D）。
+
+#### 4. 修改文件
+
+| 文件 | 改动 |
+| --- | --- |
+| `humanoid/algo/ppo/dh_ppo_amp.py` | disc loss 目标 ±τ（2 行）+ `amp_label_smooth` 参数 |
+| `humanoid/algo/amp/amp_discriminator.py` | predict_style_reward 映射平移（3 行）+ tau 参数 |
+| `humanoid/envs/x1/x1_dh_stand_env.py` | 静立窗 q_t → default_dof_pos（2 行） |
+| `humanoid/envs/x1/x1_dh_stand_config.py` | `amp_label_smooth = 0.7`（1 行） |
+| `scripts/tools/test_amp_disc.py` | 映射锚点断言 + 平滑后收敛测试更新（~15 行） |
+
+#### 5. 训练参数
+
+同 exp1.1（从零 / 6000 iter / seed 5 / commit 待推），run_name=exp1_2_amp。硬件建议：**等 083 基线出中期信号（it2500+，约 2h 后）再定**——若 task 锐化已能走，exp1.2 优先级可降（AMP=抛光）；若仍踏步，立即上 L20。
+
+#### 6. 与 083 基线的归因关系
+
+exp1.2 若成功（style>0 且步态自然），与 083（style≡0）的对比天然构成"AMP 有无贡献"的消融对——正好补上当初没买的消融，且同 task 锐化配置，归因干净。
+
 ### 附：决策点（已拍板 2026-09-07）
 
 1. **ref_joint_pos 2.4→0（推荐）vs 0.5 过渡**：推荐 0——踏步白拿漏洞必须在源头堵死；若担心风格突变过大，可 0.5 但接受归因混杂
