@@ -474,7 +474,7 @@ class X1DHStandCfgPPO(LeggedRobotCfgPPO):
         amp_enabled = True              # 与 env cfg amp.enabled 双闸，任一 False 即纯 task
         amp_disc_obs_steps = 3          # 判别器时间窗：183 = 3 × 61（61 = ang3+dof_pos29+dof_vel29）
         amp_disc_hidden_dims = [1024, 512]
-        amp_disc_lr = 1e-4              # 恒定（KL 自适应只作用 PPO 优化器）
+        amp_disc_lr = 5e-5              # exp1.1: 1e-4→5e-5——exp1 判别器 86 iter 碾压饱和死锁，降速给 policy 追赶窗口（配合 demo 侧混静立窗）
         amp_grad_penalty_scale = 10.0   # 梯度惩罚只加 demo 侧（AMP 论文标准）
         amp_disc_buffer_size = 100      # 滑窗控制步 > rollout 窗 24，跨迭代混合防 stale
         amp_style_reward_scale = 1.5    # style = dt × 1.5 × clamp(1-(D-1)²/4)，乘 dt 与控制频率解耦

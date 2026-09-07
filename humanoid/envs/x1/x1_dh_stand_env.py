@@ -786,16 +786,22 @@ class X1DHStandEnv(LeggedRobot):
             self._amp_hist[fill] = feat[fill].unsqueeze(1).expand(-1, self.amp_disc_steps, -1)
             self._amp_hist_fill[fill] = False
 
-        demo = self._sample_amp_demo()
         stand = torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold
+        # exp1.1: demo 侧按当前 agent 站立占比混入静立窗（堵判别器平凡特征）
+        demo = self._sample_amp_demo(stand_ratio=float(stand.float().mean().item()))
         self.extras["amp"] = {
             "disc_obs": self._amp_hist,        # (N,S,61) 原始特征
             "disc_demo_obs": demo,             # (N,S,61)
             "stand_mask": stand,               # (N,) bool
         }
 
-    def _sample_amp_demo(self):
-        """每步每 env 随机抽（段, 起始帧）取 S 步窗——与相位解耦的纯风格匹配（random_fetch 风格）"""
+    def _sample_amp_demo(self, stand_ratio=0.0):
+        """每步每 env 随机抽（段, 起始帧）取 S 步窗——与相位解耦的纯风格匹配（random_fetch 风格）
+
+        exp1.1: 以当前 agent 站立占比 stand_ratio 混入静立窗（随机帧 q_t 重复 S 次，ang/dq=0）——
+        两侧静立分布逐批对齐，堵判别器"运动幅度"平凡特征（exp1 死锁根因，见 exp1.md §8）。
+        融合不受影响：站立 env 的 style 仍被 stand_mask 屏蔽，风格信号只作用于行走 env。
+        """
         N = self.num_envs
         seg = torch.randint(0, self._amp_num_seg, (N,), device=self.device)
         stride = self._amp_seg_stride[seg]
@@ -804,7 +810,18 @@ class X1DHStandEnv(LeggedRobot):
         frames = torch.stack(
             [start + j * stride for j in range(self.amp_disc_steps)], dim=1)   # (N,S)
         seg_idx = seg.unsqueeze(1).expand(-1, self.amp_disc_steps)
-        return self._amp_demo_feat[frames, seg_idx]                            # (N,S,61)
+        demo = self._amp_demo_feat[frames, seg_idx]                            # (N,S,61)
+
+        if stand_ratio > 0.0:
+            # 静立窗：随机段随机帧 q_t 重复 S 次，速度/角速度置 0
+            seg_s = torch.randint(0, self._amp_num_seg, (N,), device=self.device)
+            f_s = (torch.rand(N, device=self.device) * self._amp_seg_len[seg_s].float()).long()
+            q = self._amp_demo_feat[f_s, seg_s, 3:3 + self.num_dof]            # (N,29)
+            still = torch.zeros_like(demo)
+            still[:, :, 3:3 + self.num_dof] = q.unsqueeze(1)
+            mix = torch.rand(N, device=self.device) < stand_ratio
+            demo = torch.where(mix.unsqueeze(1).unsqueeze(2), still, demo)
+        return demo
 
 # ================================================ Rewards ================================================== #
     def _reward_ref_joint_pos(self):
