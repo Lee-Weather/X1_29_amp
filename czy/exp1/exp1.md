@@ -541,11 +541,33 @@ update_normalization()  # 事后更新（本批用旧统计量）
 | 摆臂自然度（目视） | 挥舞 | 端平 | 接近 mocap 步行摆臂节律 |
 | 触地节律 vs cycle_time | 0.6-1.0 vs 1.14 | — | 1.14±20% |
 
-### 7. 实验结果
+### 7. 实施与启动记录（2026-09-07）
 
-待方案评审 → 实施 → 训练后补充。
+**决策拍板**：① ref_joint_pos 归零 ② 从零训练 ③ 不做并行消融（失败时再补跑）。
 
-### 附：决策点（待用户拍板）
+**实施完成**（commit 8937629，9 文件 +1101 行）：
+
+- 新建 `humanoid/algo/amp/`（AMPDiscriminator + EmpiricalNormalization + CircularBuffer 精简移植）与 `dh_ppo_amp.py`（覆写 `process_env_step`/`update`，`configure_amp` 由 runner 注入 obs 维/num_envs/dt）
+- env：`_init_amp`（demo 特征预计算：dof_vel 前向差分、root_ang_vel 四元数差分精确 log 映射）+ `post_physics_step` pre-super 采样 + reset 整窗填充防污染 + `amp.enabled` 开关
+- config：`DHPPOAMP` + FLAT amp 超参（class_to_dict 平铺键直传 kwargs）+ task 锐化四项
+- runner：save/load 判别器+归一化统计+独立优化器、log 增 5 个 AMP 标量
+- 离线单测 `scripts/tools/test_amp_disc.py` **28/28 通过**（含 inference_mode 采集→update 反向的推理张量污染专项）
+- 本地 isaacgym 冒烟（64 env×2 iter）通过
+
+**实施中发现并解决的问题**：
+
+1. **dt 疑云落地**：env.dt 实测 0.01（100Hz），mocap 50Hz → 0.5 帧/步，整数 stride 会使 demo 窗时间尺度失真 2 倍。解法：agent 侧隔步采样（`agent_stride=2`，每 2 控制步滚动一次历史），两侧窗口跨度精确对齐 0.04s（打印确认）。
+2. **云端任务 v1（TASK_20260907_065）启动即败**：`can't open file 'X1_29_amp/.../train.py'`——create JSON 缺 `goodsBackId`/`personalDataPath` 致代码卷未挂载。v2 补齐（SKUSL000003 + /personal）后正常。
+
+**云端任务**：TASK_20260907_067（exp1_amp_v2），项目 PRO_20260907_019（X1_29_amp），账号 limxmtjqe95pp63oab（CLI 现登账号，今日登录），L4 ¥4.11/h，6000 iter ETA ~7h。
+
+**早期监控（11 iter）**：disc loss 0.012、agent -0.960 / demo +0.996、style 0.0——判别器初期碾压属预期（随机策略 vs mocap 天然可分），关注 500+ iter 后 agent 分是否回升（止损处置见 §6 表）。
+
+### 8. 实验结果
+
+训练完成后补充（回放三件套 → czy/data/exp1/）。
+
+### 附：决策点（已拍板 2026-09-07）
 
 1. **ref_joint_pos 2.4→0（推荐）vs 0.5 过渡**：推荐 0——踏步白拿漏洞必须在源头堵死；若担心风格突变过大，可 0.5 但接受归因混杂
 2. **从零（推荐）vs 续训 exp0.3**：续训收敛快（policy 已会站）但 action 分布已收敛、noise_std 低，AMP 新梯度注入效果存疑且归因混杂；从零干净
