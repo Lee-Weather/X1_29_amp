@@ -10,6 +10,7 @@
 | exp0 | 2026-09-02 | 29DOF 全身控制基线：env 腿部按名索引 + config 29 维（obs 98/action 29/priv 141）+ 29DOF PM URDF + 上半身默认位姿锁定，从零 L4 训练至 5800 轮额度耗尽；回放摔倒（min_h 0.092m）+ 严重过冲（0.4 段 286%）+ 停不住，站立段完美 | ❌未达标（已测试） | TASK_20260902_185(停)→186 | limxmtcm6wjlso8ce4@emalupe.com（账号3，已耗尽） | model_5800.pt |
 | exp0.2 | 2026-09-03 | Phase 2b mocap 参考行走：ref_lib.pt 三段（0000/0002/0026，50Hz）全身查表（腿臂同源同拍）+ 逐段步频相位 + URDF 右臂限位镜像修复；本机先训（从零 ~1600 iter 形态健康）→切云端 L20+L4 双任务并行（被手动停）→换账号5 L4 重训；回放摔倒 ~4 次/40s + 指令跟随差（cmd=0 自走 0.5m/s） | ❌未达标（已测试） | TASK_20260904_006(L20,停)/007(L4,停)/008(L4·账号5)/073(回放) | limxmtjqbym1pg0fra@emalupe.com（账号5） | model_6000.pt |
 | exp0.3 | 2026-09-04 | 根因导向微调（不用 AMP）：压动作幅度（action_scale 0.3+smoothness×2.5+clip 3）治 bang-bang 前扑 + gait 调度改出生/结尾站立治停不住 + ref_joint_pos 加压制参考架空；回放零摔倒+站得住+corr 0.91，但 0.4/0.6 原地踏步不平移 | ⚠️部分达标（已测试） | TASK_20260904_086(L4·账号6) | limxmtjqd2kli2rjom@emalupe.com（账号6） | model_6000.pt |
+| exp1 | 2026-09-07 | AMP 判别器引入（robolab 移植）：DHPPOAMP + LSGAN style reward lerp 融合替代 ref_joint_pos 逐关节 L2 + task 锐化（σ20/low_speed 加重）治踏步；demo 库复用 ref_lib.pt 三段差分特征 | 方案评审中 | — | — | — |
 
 ---
 
@@ -386,3 +387,166 @@
 1. **锐化平移梯度**（核心）：tracking_sigma 5→20（cmd=0.4/v=0 → exp(-3.2)=0.04，踏步不再白拿 tracking 分）
 2. **加重不走罚**：low_speed 权重 0.2→1.0 且 too-slow 罚 -1→-2（踏步净收益转负）
 3. 保持 exp0.3 全部修改（action_scale 0.3/clip 3/smoothness -0.02/gait 出生站立/ref 2.4）——它们是本次成功的部分
+
+---
+
+## 实验 exp1：引入 AMP 判别器（相位时钟 + 风格判别混合）（2026-09-07 方案）
+
+> 晋级依据（lab-notebook §1.3）：跨 ≥2 模块大改（新增 algo/amp 模块 + env 特征管线 + 奖励结构换血）——exp0.3 未达标也晋级，修改编号重置。
+
+### 1. 上一实验结果与教训
+
+> 数据：exp0.3 model_6000（TASK_20260904_086，reward 63.8 / ep_len 1125 / ref_joint_pos +0.566）
+> - 回放：零摔倒（exp0.2 为 5 次）、cmd=0 段 vx≈0.00（完美站住）、corr(des,pos) 左髋 0.908、clip_count 0
+> - 但 0.4/0.6 指令下原地踏步（vx 0.019/-0.01），稳态跟踪 5%/-2%
+> - 根因：踏步是局部最优——步态形奖励（ref_joint_pos 2.4+air_time 1.2+contact_number 2.4）全额白拿，tracking σ=5 太平（cmd=0.4/v=0 仍得 45% 分），low_speed 罚仅 -0.2
+>
+> **核心教训**：
+> - 证明了：exp0.3 的幅度压制/站立调度/参考可实现化三项机制全部有效（三大病灶治愈）
+> - 否定了："加 ref_joint_pos 权重能让策略走起来"——逐关节 L2 只管形态不管平移，反而给踏步发奖
+> - 本轮要解决：① 平移驱动（task 侧锐化）② 风格从"逐关节 L2"升级为"全局判别"（AMP，治摆臂自然度上限 + 替掉踏步白拿的 ref_joint_pos）
+
+### 2. 本轮修改目标
+
+- 目标1（继承 exp0.3）：回放零摔倒、cmd=0 停住（|vx|<0.15）、clip_count<200
+- 目标2（治踏步，task 侧）：0.4/0.6 稳态跟踪 80-120%
+- 目标3（AMP 侧）：风格自然度——视频目视摆臂协调 + disc demo/agent score 差值收敛（|Δ|<0.5 且不再单调增大）
+- 目标4（工程）：`amp.enabled=False` 单开关退化为纯 task 基线（消融能力）
+- 验收标准：回放 0.4/0.6 稳态 80-120% + 零摔倒 + 摆臂目视自然（对比 exp0.2 视频明显改善）
+
+### 3. 修改内容
+
+#### 修改一：新增 AMP 算法模块 `humanoid/algo/amp/` + `dh_ppo_amp.py`
+
+**架构**（robolab ppo_amp.py 移植映射，见 amp_architecture_notes.md §6.3）：
+
+```
+DHPPOAMP(DHPPO)                          # dh_ppo_amp.py，不改父类
+  ├─ AMPDiscriminator                    # amp/amp_discriminator.py
+  │    MLP [1024,512]+ELU → Linear(1)；逐单步 EmpiricalNormalization
+  │    输入 183 维 = 3 步窗 × 61 维/步
+  │    61 = root_ang_vel(3, 体轴) + dof_pos(29, 绝对) + dof_vel(29)
+  │    （v1 不含 key_body_pos——ref_lib 无 FK 数据，notes §6.4 允许）
+  ├─ CircularBuffer ×2                   # amp/amp_buffers.py
+  │    agent/demo 各一，容量 100 控制步 > rollout 窗，FIFO 滑窗不清空
+  ├─ disc_optimizer                      # 独立 Adam lr=1e-4 恒定（KL 自适应不波及）
+  │    trunk/linear 分组 weight decay 1e-3/1e-1；grad clip 1.0
+  └─ 覆写两个方法（父类其余 199 行不动）：
+       process_env_step()  # 奖励融合点
+       update()            # disc loss 训练点
+```
+
+**a) 奖励融合**（覆写 `process_env_step`，对应 dh_ppo.py L110-120）：
+
+```python
+disc_obs      = infos["amp"]["disc_obs"]        # env 侧采好经 extras 传入
+disc_demo_obs = infos["amp"]["disc_demo_obs"]
+with torch.no_grad():                            # 旧参 eval
+    d = self.disc(disc_obs)
+    rew = torch.clamp(1 - (d - 1) ** 2 / 4, min=0)   # LSGAN 映射，值域[0,1]
+style = dt * style_reward_scale * rew            # ×0.02×1.5，与控制频率解耦
+rewards_fused = lerp * rewards + (1 - lerp) * style   # lerp=0.6
+super().process_env_step(rewards_fused, dones, infos) # 融合值进 GAE
+self.disc_obs_buffer.append(disc_obs); self.disc_demo_buffer.append(disc_demo_obs)
+```
+
+- only_positive_rewards=True 在 env 侧先 clip 后传出，style≥0 无冲突
+- **站立掩码**：站立 env（‖cmd‖≤0.05）style 项置零（纯 task）——demo 库三段全是行走，不 mask 会与 stand_still(3.5) 打架，威胁 exp0.3 已验证的站立成果
+
+**b) 判别器训练**（覆写 `update`，mini-batch 循环内 PPO backward 之后追加）：
+
+```python
+agent_batch = self.disc_obs_buffer.sample(mb_size)     # CircularBuffer 滑窗采样
+demo_batch  = self.disc_demo_buffer.sample(mb_size)
+d_agent, d_demo = self.disc(agent_batch), self.disc(demo_batch)
+disc_loss = 0.5 * (MSE(d_agent, -1) + MSE(d_demo, +1))       # LSGAN
+gp = 10 * grad_norm(demo_batch → d_demo).pow(2)              # 只罚 demo 侧（AMP 论文标准）
+disc_optimizer.step(); PPO optimizer 照常独立 step
+update_normalization()  # 事后更新（本批用旧统计量）
+```
+
+- rollout 时 reward 用旧 D 算（no_grad），训练时同批交替，无冻结
+- `storage.clear()` 照旧，CircularBuffer 不清空（跨迭代混合防 stale）
+- 返回值保持 3 元组兼容 runner；AMP 指标存 `self.amp_stats`（disc_score/disc_demo_score/disc_loss/grad_penalty/style_reward）
+
+**c) 启动硬断言**（notes §4-4）：agent/demo 特征逐项维度断言 + ref dof_names 与 env dof_names 顺序一致性断言（沿用 ref_lib 加载惯例）
+
+#### 修改二：env 侧 demo 特征管线（`x1_dh_stand_env.py`）
+
+- **加载期预计算**（ref_lib.pt 三段，毫秒级）：`dof_vel = diff(dof_pos)×fps`、`root_ang_vel = 体轴差分(root_rot)×fps`；拼成每段 `(T, 61)` 特征张量 + 预取 3 步滑窗索引池
+- **每步采样**（post_physics_step 中，step 之后、reset_idx **之前**——robolab reset 污染反面教材 notes §4-7）：
+  - agent 侧：`[base_ang_vel(3), dof_pos(29), dof_vel(29)]` 维护 3 步环形历史
+  - demo 侧：每步随机抽（段、起始帧）——random_fetch 风格，与相位解耦（纯风格匹配，无 tracking 张力）
+- 经 `extras["amp"]` 传出（policy 观测保持纯净，notes §6.3 反面教材规避）
+- 开关：`rewards.amp.enabled=False` 时 extras 不产出、DHPPOAMP 退化为纯 task（消融用）
+
+#### 修改三：task 侧锐化（治 exp0.3 踏步，exp0.4 方案并入）
+
+| 参数 | exp0.3 值 | 新值 | 说明 |
+| --- | --- | --- | --- |
+| rewards.tracking_sigma | 5 | 20 | cmd=0.4/v=0 → exp(-3.2)=0.04，踏步不再白拿 tracking 分 |
+| rewards.scales.low_speed | 0.2 | 1.0 | 配合 σ 锐化 |
+| _reward_low_speed too-slow 罚 | -1.0 | -2.0 | 踏步净收益转负 |
+| rewards.scales.ref_joint_pos | 2.4 | **0.0** | **AMP style 接管形态**——保留则踏步白拿漏洞仍在且与 style 双重计分打架 |
+
+**保持 exp0.3 全部修改不动**（action_scale 0.3 / clip_actions 3 / smoothness -0.02 / gait 出生结尾站立 / stand_still 3.5 / low_speed 对称罚）。
+
+#### 修改四：配置注入（零侵入）
+
+- `X1DHStandCfgPPO.algorithm.algorithm_class_name = 'DHPPO'` → `'DHPPOAMP'`（runner eval 字符串注入，L73-74，改动仅 1 行）
+- PPO cfg 新增 `class amp`：disc_hidden `[1024,512]` / disc_lr 1e-4 / grad_penalty 10 / buffer_size 100 / disc_obs_steps 3 / style_reward_scale 1.5 / task_lerp 0.6
+- env cfg 新增 `class amp`：enabled / 站立掩码开关
+- runner `save/load` 扩展：disc + normalizer + disc_optimizer state（断电续训不丢判别器）；`log()` 增补 5 个 AMP 标量
+
+### 4. 修改文件
+
+- 新建 `humanoid/algo/amp/__init__.py`、`amp/amp_discriminator.py`、`amp/amp_buffers.py`
+- 新建 `humanoid/algo/ppo/dh_ppo_amp.py`（DHPPOAMP，仅覆写 2 方法 + __init__ 扩展）
+- 改 `humanoid/envs/x1/x1_dh_stand_env.py`：demo 特征预计算 + 每步采样 + extras 通道 + amp.enabled 开关
+- 改 `humanoid/envs/x1/x1_dh_stand_config.py`：algorithm_class_name、amp 超参块、tracking_sigma/low_speed/ref_joint_pos
+- 改 `humanoid/algo/ppo/dh_on_policy_runner.py`：save/load amp state、log amp stats（~15 行）
+- 新建 `scripts/tools/test_amp_disc.py`：维度断言 / buffer FIFO / style reward 值域 [0,1] / LSGAN loss 收敛 sanity（离线小张量，无需 GPU 仿真）
+
+### 5. 训练参数
+
+| 参数 | 值 |
+| --- | --- |
+| 训练方式 | 从零（备选：exp0.3 model_6000 续训，见决策点②） |
+| GM账号 | 账号6 limxmtjqd2kli2rjom（余额 ~29，一次 6000 iter L4 ≈ ¥21 够） |
+| max_iterations | 6000 |
+| num_envs / num_steps_per_env | 4096 / 24（rollout 窗 < buffer 100 ✅） |
+| seed | 5 |
+| PPO lr | 3e-4 adaptive（不动）；disc lr 1e-4 恒定 |
+| 算力 | L4（ESKU000003） |
+| 启动命令 | `gm-run .../train.py --task=x1_dh_stand --run_name=exp1_amp --headless --max_iterations=6000` |
+
+### 6. 预期与验收
+
+**训练监控**（新增 AMP 指标，止损线）：
+
+| 指标 | 健康 | 异常处置 |
+| --- | --- | --- |
+| disc_demo_score → +1 / disc_score → -1 | 渐近但不清零（对抗平衡） | agent 分恒 0：判别器碾压 → disc_lr 1e-4→5e-5 或 grad_penalty 10→20 |
+| style_reward 均值 | 中后期 > 0.3（满额 dt×1.5×1≈0.03/步，归一后看趋势） | 恒 0：policy 无风格梯度 |
+| disc_loss | 平稳小幅震荡 | 单调 → 0：判别器必胜，同上处置 |
+| Mean reward | 与 exp0.3(63.8) 结构不同不可直比，看 ep_len | ep_len < 800 → style 压垮 task，lerp 0.6→0.75 |
+
+**回放验收**（速度阶梯，增强诊断 CSV）：
+
+| 验收线 | exp0.2 | exp0.3 | exp1 目标 |
+| --- | --- | --- | --- |
+| 摔倒/40s | 5 | 0 | 0 |
+| cmd=0 停住 | ✗ | 0.00 | <0.15 |
+| 0.4/0.6 稳态 | 135%/189% | 5%/-2% | **80-120%** |
+| 摆臂自然度（目视） | 挥舞 | 端平 | 接近 mocap 步行摆臂节律 |
+| 触地节律 vs cycle_time | 0.6-1.0 vs 1.14 | — | 1.14±20% |
+
+### 7. 实验结果
+
+待方案评审 → 实施 → 训练后补充。
+
+### 附：决策点（待用户拍板）
+
+1. **ref_joint_pos 2.4→0（推荐）vs 0.5 过渡**：推荐 0——踏步白拿漏洞必须在源头堵死；若担心风格突变过大，可 0.5 但接受归因混杂
+2. **从零（推荐）vs 续训 exp0.3**：续训收敛快（policy 已会站）但 action 分布已收敛、noise_std 低，AMP 新梯度注入效果存疑且归因混杂；从零干净
+3. **是否并行消融任务**（账号7/8 各 ¥50 可用）：amp=True 主实验 + amp=False（纯 task 锐化基线）各一任务并行——多花一份钱，买"AMP 是否真有贡献"的干净归因；不并行则失败时再补跑消融
