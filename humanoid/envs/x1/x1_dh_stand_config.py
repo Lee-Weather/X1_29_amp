@@ -496,6 +496,16 @@ class X1DHStandCfgPPO(LeggedRobotCfgPPO):
                                        # 乘 dt 保留（控制频率解耦）。robolab task O(0.8) 无此问题
                                        # 本地对照（64env×60iter）：ep_len/reward 与 1.5 完全一致（无破坏），style 0.001→0.055
         amp_task_lerp = 0.6             # 融合 = 0.6·task + 0.4·style（站立 env 纯 task 不融合）
+        # exp1.5: style 负斜坡下界——rew = max(1-(D-1)²/4, eps·(D+1))。D∈(-1,1) 与旧公式
+        # 逐点一致（量纲零扰动）；D<-1 旧 clamp 平顶梯度为 0（D 过冲时 policy 失联），
+        # 负斜坡保证任何 D 值梯度不断流且越负越罚。定位：保险丝（exp1.3 死锁值 -0.994
+        # 在梯度区，rew≈0.006 是淹没级非零级，主攻是 buffer 门控 + D 重置）
+        amp_style_floor_eps = 0.05
+        # exp1.5 主攻：agent buffer 三重门控——healthy = 行走(~stand) & 未终止(~done) &
+        # episode_length>50(0.5s)。剥掉 D 的平凡可分样本（exp1.3 死锁头号嫌疑：gait 26%
+        # 站立段样本 vs 100% 行走 demo，"速度幅度"一维秒分；另防 terminal 摔倒态与
+        # 复位静止态送分题）。-1=关闭门控（旧行为）
+        amp_buffer_min_episode_len = 50
         amp_disc_trunk_weight_decay = 1e-3
         amp_disc_linear_weight_decay = 1e-1
         amp_disc_max_grad_norm = 1.0

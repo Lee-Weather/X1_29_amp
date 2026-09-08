@@ -826,6 +826,8 @@ class X1DHStandEnv(LeggedRobot):
             "disc_obs": self._amp_hist,        # (N,S,61) 原始特征
             "disc_demo_obs": demo,             # (N,S,61)
             "stand_mask": stand,               # (N,) bool
+            # exp1.5: buffer 门控第三条件——复位初期（episode_length 小）样本不入 D
+            "episode_length": self.episode_length_buf,  # (N,)
         }
 
     def _sample_amp_demo(self, stand_ratio=0.0):

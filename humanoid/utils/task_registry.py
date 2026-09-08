@@ -159,9 +159,12 @@ class TaskRegistry():
         if ckpt_path:
             # 直连 checkpoint 加载（云端 resume 模式）：绕开 --resume 的 logs 目录扫描，
             # 路径不存在时 resolve_ckpt_path 会在仓库内兜底搜索（适配挂载位置不确定性）
+            # exp1.5: --disc_fresh 配套 skip_disc——只载 policy，判别器从零初始化
+            disc_fresh = bool(getattr(args, "disc_fresh", False))
             resume_path = resolve_ckpt_path(ckpt_path)
-            print(f"Loading model from ckpt_path: {resume_path}")
-            runner.load(resume_path, load_optimizer=False)
+            print(f"Loading model from ckpt_path: {resume_path}"
+                  + (" [disc fresh]" if disc_fresh else ""))
+            runner.load(resume_path, load_optimizer=False, skip_disc=disc_fresh)
         elif resume:
             # load previously trained model
             resume_path = get_load_path(log_root, load_run=train_cfg.runner.load_run, checkpoint=train_cfg.runner.checkpoint)

@@ -29,7 +29,9 @@ class DHPPOAMP(DHPPO):
                  amp_disc_lr=1e-4,
                  amp_grad_penalty_scale=10.0,
                  amp_disc_buffer_size=100,
+                 amp_buffer_min_episode_len=-1,   # exp1.5: agent buffer 门控，-1=关闭（旧行为），>=0 启用三重门控
                  amp_style_reward_scale=1.5,
+                 amp_style_floor_eps=0.0,   # exp1.5: D<-1 负斜坡下界（0=旧 clamp）
                  amp_task_lerp=0.6,
                  amp_disc_trunk_weight_decay=1e-3,
                  amp_disc_linear_weight_decay=1e-1,
@@ -42,7 +44,9 @@ class DHPPOAMP(DHPPO):
         self.amp_disc_lr = float(amp_disc_lr)
         self.amp_grad_penalty_scale = float(amp_grad_penalty_scale)
         self.amp_disc_buffer_size = int(amp_disc_buffer_size)
+        self.amp_buffer_min_episode_len = int(amp_buffer_min_episode_len)
         self.amp_style_reward_scale = float(amp_style_reward_scale)
+        self.amp_style_floor_eps = float(amp_style_floor_eps)
         self.amp_task_lerp = float(amp_task_lerp)
         self.amp_disc_trunk_weight_decay = float(amp_disc_trunk_weight_decay)
         self.amp_disc_linear_weight_decay = float(amp_disc_linear_weight_decay)
@@ -59,6 +63,8 @@ class DHPPOAMP(DHPPO):
         self.amp_stats = {}
         self._style_rew_sum = 0.0
         self._style_env_count = 0.0
+        self._healthy_sum = 0.0    # exp1.5: buffer 门控健康样本占比监控
+        self._healthy_total = 0.0
 
     def configure_amp(self, disc_obs_dim, num_envs, dt):
         """runner 在 alg 构造后调用（inference_mode 外）：按 env 实际维度构建 AMP 组件"""
@@ -70,6 +76,7 @@ class DHPPOAMP(DHPPO):
             disc_obs_steps=self.amp_disc_obs_steps,
             hidden_dims=self.amp_disc_hidden_dims,
             style_reward_scale=self.amp_style_reward_scale,
+            style_floor_eps=self.amp_style_floor_eps,
             device=self.device,
         ).to(self.device)
         # 独立优化器：lr 恒定不被 KL 自适应波及；线性输出层重正则防 logit 漂移
@@ -108,8 +115,22 @@ class DHPPOAMP(DHPPO):
                             self.amp_task_lerp * rewards
                             + (1.0 - self.amp_task_lerp) * style_rewards)
 
-        # 原始（未归一化）样本即时入缓冲，新旧混合防 stale
-        self.disc_obs_buffer.append(disc_obs)
+        # agent 侧三重门控入 buffer（exp1.5 主攻）：站立/终止/复位初期样本不进 D 训练集。
+        # 剥掉 D 的平凡可分样本——exp1.3 死锁头号嫌疑：gait 调度 26% 站立段样本 +
+        # 复位静止窗 vs 100% 行走 demo，"速度幅度"一维秒分（与 exp1 的 demo 静立窗
+        # 问题互为镜像，此番反向修复：agent 侧去站立，无需手造数据）。
+        # 开关语义：min_episode_len=-1 完全关闭（旧行为纯 append）；>=0 启用门控
+        # （~stand & ~done 恒开，>0 时叠加 episode_length 条件）。demo 侧不门控。
+        ep_len = amp.get("episode_length")
+        if self.amp_buffer_min_episode_len < 0:
+            self.disc_obs_buffer.append(disc_obs)
+        else:
+            healthy = (~stand_mask) & (~dones.bool())
+            if self.amp_buffer_min_episode_len > 0 and ep_len is not None:
+                healthy = healthy & (ep_len > self.amp_buffer_min_episode_len)
+            self.disc_obs_buffer.append_masked(disc_obs, healthy)
+            self._healthy_sum += float(healthy.sum().item())
+            self._healthy_total += float(healthy.shape[0])
         self.disc_demo_obs_buffer.append(disc_demo_obs)
 
         # 监控：style 只统计行走 env（站立 env 无风格梯度）
@@ -251,8 +272,13 @@ class DHPPOAMP(DHPPO):
                 "disc_demo_score": mean_disc_demo_score / num_updates,
                 "style_reward": (self._style_rew_sum / self._style_env_count
                                  if self._style_env_count > 0 else 0.0),
+                # exp1.5: 门控健康率（agent 步入 buffer 占比；预期 ~0.5-0.7，趋 0 = 门控过严）
+                "buffer_healthy": (self._healthy_sum / self._healthy_total
+                                   if self._healthy_total > 0 else -1.0),
             }
         self._style_rew_sum = 0.0
         self._style_env_count = 0.0
+        self._healthy_sum = 0.0
+        self._healthy_total = 0.0
 
         return mean_value_loss, mean_surrogate_loss, mean_state_estimator_loss

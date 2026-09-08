@@ -56,12 +56,14 @@ class AMPDiscriminator(nn.Module):
                  disc_obs_steps=3,      # 时间窗控制步数
                  hidden_dims=(1024, 512),
                  style_reward_scale=1.5,
+                 style_floor_eps=0.0,   # exp1.5: D<-1 区负斜坡下界系数（0=旧 clamp 行为）
                  device="cpu"):
         super().__init__()
         self.disc_obs_dim = int(disc_obs_dim)
         self.disc_obs_steps = int(disc_obs_steps)
         self.input_dim = self.disc_obs_dim * self.disc_obs_steps
         self.style_reward_scale = style_reward_scale
+        self.style_floor_eps = float(style_floor_eps)
         self.device = device
 
         # 逐单步归一化（61 维），与 MLP 输入展平解耦
@@ -111,8 +113,15 @@ class AMPDiscriminator(nn.Module):
     def predict_style_reward(self, disc_obs, dt):
         """rollout 期风格分：旧参 no_grad 计算
 
+        exp1.5: rew = maximum(clamp 曲线, eps*(D+1) 负斜坡)——
+        D ∈ (-1,1) 与旧公式逐点一致（量纲零扰动）；D < -1 旧公式 clamp 平顶梯度为 0
+        （D 过冲自信时 policy 完全失联），负斜坡保证任何 D 值下梯度通道不断流，
+        且 D 越负 style 越负（连续惩罚，经 alg 层融合直接进 GAE，不受 env 侧
+        only_positive_rewards 截断）。诚实定位：保险丝——exp1.3 死锁值 -0.994 在
+        梯度区（rew≈0.006 是淹没级而非零级），主攻是 buffer 门控与 D 重置。
+
         Returns:
-            style_reward (N,): dt × scale × clamp(1-(D-1)^2/4, min=0)
+            style_reward (N,): dt × scale × maximum(1-(D-1)²/4, eps·(D+1))
             disc_score (N,):   判别器原始 logit（监控用）
         """
         assert disc_obs.dim() == 3
@@ -121,7 +130,11 @@ class AMPDiscriminator(nn.Module):
             self.eval()
             normed = self.normalize_disc_obs(disc_obs).reshape(-1, self.input_dim)
             disc_score = self.forward(normed)
-            rew = torch.clamp(1 - 0.25 * torch.square(disc_score - 1), min=0)
+            rew = 1 - 0.25 * torch.square(disc_score - 1)
+            if self.style_floor_eps > 0.0:
+                rew = torch.maximum(rew, self.style_floor_eps * (disc_score + 1))
+            else:
+                rew = torch.clamp(rew, min=0)
             style_reward = dt * self.style_reward_scale * rew
             if was_training:
                 self.train()

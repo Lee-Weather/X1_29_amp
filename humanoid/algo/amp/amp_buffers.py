@@ -35,6 +35,34 @@ class CircularBuffer:
         self._buffer[self._pointer] = data.to(self.device)
         self._num_pushes += 1
 
+    def append_masked(self, data, mask):
+        """exp1.5: 门控写入——mask 为 False 的 env 保留上一行旧样本（本步不更新）。
+
+        agent buffer 三重门控用（~stand & ~done & episode_len>阈值）：站立/终止/
+        复位初期样本不进 D 的训练集，剥掉"速度幅度"等平凡可分特征（exp1.3 死锁
+        头号嫌疑：gait 26% 站立段样本 vs 100% 行走 demo，与 exp1 的 demo 静立窗
+        问题互为镜像）。首行（无旧样本可保留）时 False 槽位写当前值，随滑窗自然
+        更新淘汰。demo buffer 不门控（本来就干净）。
+
+        Args:
+            data: (batch_size, *obs_shape)
+            mask: (batch_size,) bool
+        """
+        if data.shape[0] != self.batch_size:
+            raise ValueError("append batch {} != buffer batch {}".format(
+                data.shape[0], self.batch_size))
+        if mask.shape[0] != self.batch_size:
+            raise ValueError("mask batch {} != buffer batch {}".format(
+                mask.shape[0], self.batch_size))
+        prev_ptr = (self._pointer - 1) % self.max_len if self._num_pushes > 0 else None
+        self._pointer = (self._pointer + 1) % self.max_len
+        row = self._buffer[self._pointer]
+        row.copy_(data.to(self.device))
+        if prev_ptr is not None and not bool(mask.all()):
+            # 不健康 env 槽位回退为上一行同 env 旧样本（等效该 env 本步不更新）
+            row[~mask] = self._buffer[prev_ptr][~mask]
+        self._num_pushes += 1
+
     def mini_batch_generator(self, fetch_length, num_mini_batches, num_epochs):
         """与 RolloutStorage.mini_batch_generator 同频：每 epoch 抽
         batch_size × fetch_length 个样本，切 num_mini_batches 份"""

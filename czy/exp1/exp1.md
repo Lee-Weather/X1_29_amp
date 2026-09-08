@@ -15,6 +15,7 @@
 | exp1.2 | 2026-09-07 | §11 label smoothing 方案推翻（换 label 不解平凡可分）→ **exp0.2 底模 resume + AMP**：新增 --ckpt_path 直连加载；静立窗 default_dof_pos；**发现量纲淹没隐藏根因**（style 上限 0.015 vs task O(6)，梯度弱 60 倍）scale 1.5→100。训练全程监控"健康"（score 收窄/style 爬升/reward 翻倍）但**回放判死：0.4/0.6 指令完全冻结，行走能力被拆**（对照底模同流程会走）——站立成为新奖励面+静立窗 style 的 net 最优，监控三绿是站立体化假阳性（§12.7） | ❌失败（新失败模式） | TASK_20260907_113(新账号) | limxmtjqfkh52btio6 | model_11999.pt |
 | exp1.3 | 2026-09-08 | 拆三个"站立补贴"（stand_ratio→0 / low_speed 1.0→2.0 / ref_joint_pos 0→0.5）+ exp0.2 底模续训。**行走保住**（tracking 0.5+/reward ~104/回放确认在走，"防拆"目标达成，commit 5dd55da）但 **D 死锁回归**：agent score -0.994 钉死、style 0.026——良性死锁，AMP 通道退化为旁观者；分布指纹定位分离面主成分=手臂高频抖动（§14） | ⚠️部分达标（AMP 死锁） | TASK_20260908_241(跑着当 task 锐化基线) | limxmtrzffpgvnsh9w@uberip.com（账号池[1]） | — |
 | exp1.4 | 2026-09-08 | 手臂/腰部 17 关节 action **EMA 低通滤波**（α=0.85，fc≈2.8Hz）：频率维度治本——物理消除手臂高频抖动（D 分离面主成分），真实移动 agent 分布（非缩 D 容量）。本地 64env×60iter 快测通过（含 pip install -e . 重装规范确立）。resume exp0.2 model_6000 + 6001 iter（终点 12001），**双线策略**：AMP 主线（本任务）+ 无 AMP 基模线（另一项目，好底模回流作 resume 源） | 🚧训练中 | TASK_20260908_319 | limxmtrzffpgvnsh9w@uberip.com（账号池[1]） | 目标 model_12001.pt |
+| exp1.5 | 2026-09-08 | exp1.3 底模（model_12000，实质=纯 task 基模）+ AMP 破死锁三修改：**① agent buffer 三重门控**（主攻：行走&未终止&ep_len>50 剥掉站立/摔倒/复位送分样本——核对新发现 exp1.3 死锁头号嫌疑：gait 26% 站立段样本 vs 100% 行走 demo，"速度幅度"一维秒分，与 exp1 的 demo 静立窗互为镜像）**② D 从零初始化**（--disc_fresh 拆死锁先验）**③ style 负斜坡下界**（eps=0.05 防过冲死区，保险丝）。resume 快测验证：healthy 0.6 / D fresh score -0.90 / style 0.18（exp1.3 死锁 0.026） | 🚧已实施未提交 | —（待建） | limxmtrzg1znyycbwp@uberip.com（账号池[2]） | 底模 czy/data/exp1.3/model_12000.pt |
 
 ---
 
@@ -975,3 +976,83 @@ TASK_20260908_241（exp0.2 底模 + 三修改续训）监控判读：
 | lumbar 滤波影响平衡补偿 | 腰部参与平衡，0.057s 延迟或拖慢响应 | 若平衡退化，把 lumbar 移出滤波（改索引断言 14） |
 | 手臂群延迟 0.057s | 手臂质量小、无平衡职责 | 可接受 |
 | EMA 滤掉有用的高频手臂动作（如摆臂配重） | mocap 手臂主频 <2Hz，2.8Hz 截止在其上 | 若 style 爬升但手臂"僵"，降 α 至 0.8（fc≈4Hz） |
+
+### 15. 实验 exp1.5：exp1.3 底模 + AMP 破死锁三修改（2026-09-08，已实施未提交）
+
+#### 1. 为什么可以用 exp1.3 作底模（决策依据）
+
+- **exp1.3 实质=纯 task 基模**：D 死锁、style 恒 0.026，6000 iter 里 AMP 通道零有效贡献，全部进步来自 task 奖励面——用它的意义与"基模线回流好底模"完全同构（双线策略的现成实例）
+- **奖励面一致性**：已在当前奖励面（low_speed 2.0 / ref_joint_pos 0.5 / stand_ratio 0）下收敛，无 exp0.2 底模的"奖励面突变"迁移期，EMA 与 D 互动观察窗口干净
+- **底模更强**：回放四项改进（§13.3c），腿部已近 demo 风格（膝 1.0x）
+
+#### 2. 死锁闭环结构与 EMA 的局限
+
+```
+D 找到稳定分离面 → disc loss→0 停更新
+   ↓
+D_agent≈-1 → style≈0.006（淹没级）→ policy 分布不变
+   ↓
+分离面继续有效 → 闭环自锁
+```
+
+EMA（exp1.4）只摧毁旧分离面（手臂抖动），**重置时钟而非拆环**——D 会找新分离面再钉死。exp1.5 必须拆环。
+
+#### 3. 实施中的新发现：agent buffer 站立样本污染（exp1.3 死锁头号嫌疑）
+
+核对 `dh_ppo_amp.process_env_step` 时发现：agent 侧每步**全部 env 样本无差别入 buffer**——exp1.3 的 stand_ratio=0 只改了 demo 侧，agent 侧 gait 调度 26% 站立段 + 复位静止窗照常入队，对阵 100% 行走 demo。**"速度幅度"一维秒分的 exp1 死锁根因以镜像形式回归**（exp1：demo 有静立窗 agent 没有；exp1.3：agent 有站立样本 demo 没有）。此前手臂抖动指纹分析在行走段回放做的（排除站立），只看到手臂——训练期 D 眼里的第一分离面很可能就是站立样本本身。
+
+#### 4. 三修改（对闭环三环各补一刀）
+
+| # | 修改 | 拆哪环 | 实现 | 定位 |
+| --- | --- | --- | --- | --- |
+| 1 | **agent buffer 三重门控** | 数据不对称（D 的分离面来源） | `healthy = (~stand) & (~done) & (ep_len>50)`；`CircularBuffer.append_masked`（不健康 env 槽位保留上一行旧样本）；demo 侧不门控 | **主攻** |
+| 2 | **D 从零初始化** | D 先验（死锁权重=作弊记忆） | `--disc_fresh` → `load(skip_disc=True)` 跳过 D state_dict（归一化统计量随之重积累） | 必做 |
+| 3 | **style 负斜坡下界** | policy 死区 | `rew = max(1-(D-1)²/4, 0.05·(D+1))`；D∈(-1,1) 与旧公式逐点一致（量纲零扰动），D<-1 给恒定 eps 梯度且越负越罚 | 保险丝 |
+
+修改 1 的镜像修法优于 exp1.1：exp1.1 曾"demo 侧加静立窗"失败于位形错配；此番"agent 侧去站立"无需手造数据，站立样本本就不该参与行走风格判别。
+
+**修改 3 的诚实定位修正**：细算发现 exp1.3 死锁值 -0.994 在梯度区（真死区是 D<-1，rew 对 D 梯度 0.997 非零），死锁本质是"信号淹没"（rew≈0.006 vs task O(1)）而非"梯度为零"——修改 3 防的是 D 过冲真空区 + 连续负反馈，不是主攻。
+
+#### 5. 修改文件与参数
+
+| 文件 | 改动 |
+| --- | --- |
+| `amp_discriminator.py` | `style_floor_eps` 参数 + 负斜坡公式 |
+| `amp_buffers.py` | `append_masked(data, mask)` |
+| `dh_ppo_amp.py` | `amp_style_floor_eps`/`amp_buffer_min_episode_len` 参数、configure_amp 传参、process_env_step 门控 + healthy 监控 |
+| `dh_on_policy_runner.py` | `load(skip_disc)` + `AMP buffer healthy` 日志行 |
+| `task_registry.py` / `helpers.py` | `--disc_fresh` CLI 透传 |
+| `x1_dh_stand_env.py` | `extras["amp"]["episode_length"]` |
+| `x1_dh_stand_config.py` | `amp_style_floor_eps=0.05`、`amp_buffer_min_episode_len=50`（-1=关闭） |
+
+#### 6. 本地快测（2026-09-08，两轮，含重要分布差异发现）
+
+**从零 64env×60iter**：healthy 恒 0 → 定位为**从零快测与底模续训的分布差异**而非 bug——gait 出生站立段 [3,5]s（exp0.3 设计）≈300+ 步，从零 episode 均长仅 91 步（<1s 摔完），**活不出出生站立段** → 全程站立指令 → 门控剥光。副作用验证了门控逻辑正确（该场景下确实没有行走样本）。
+
+**exp1.3 底模 resume 64env×40iter + --disc_fresh**（真实场景验证，全过）：
+
+| 指标 | exp1.3 死锁形态 | exp1.5 快测 | 判读 |
+| --- | --- | --- | --- |
+| AMP buffer healthy | —（无此监控） | **0.57~0.63** | 门控工作，落在预期 0.5~0.7 |
+| agent / demo score | -0.994 / 0.998 双钉死 | **-0.90 / 0.92** | D 从零且被持续挑战（disc fresh 生效） |
+| disc loss | 0.0013 | **0.035~0.04** | D 不再秒分 |
+| style reward (walk) | 0.026 | **0.17~0.19** | style 通道复活 |
+| episode 均长 / reward | — | 440→540 / 19→25 | 底模在走且变好 |
+
+#### 7. 云端任务参数（待用户指令创建）
+
+- 底模：`czy/data/exp1.3/model_12000.pt`（上传 OSS 后挂载）
+- startScript：`gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand --run_name=exp1_5_break_lock --headless --seed=5 --ckpt_path=X1_29_amp/model_12000.pt --disc_fresh --max_iterations=6000`（iter 12000 → 终点 18000）
+- 账号：账号池[2] limxmtrzg1znyycbwp@uberip.com（已切换登录）；算力 4090（ESKU000001）
+
+#### 8. 监控判据（升级版，不可与 exp1.3 绝对值直接对比）
+
+| 指标 | 死锁形态 | 健康形态 |
+| --- | --- | --- |
+| disc loss | →0.001 | **0.3~0.7 平台**（D 持续被挑战） |
+| agent / demo score | 双钉死 ±0.99 | **双方 0.7~0.9 震荡** |
+| style (walk) | 0.026 | 爬升 >0.3 且**跨 env 方差 >0** |
+| buffer healthy | — | 0.5~0.7（趋 0 = 门控过严/episode 过短） |
+| 行走指标 | exp1.3 水平 | 不倒退 |
+
+**止损**：it 500 内 disc loss 仍 →0 + 双 score 钉死 = 新分离面存在 → 用回放 CSV 重算全身逐关节倍率定位（此时门控已剥站立样本，指纹将是纯行走段差异）；下一张牌：demo 侧噪声匹配（训练期 agent 探索噪声 vs 干净 demo 的结构性可分维）。

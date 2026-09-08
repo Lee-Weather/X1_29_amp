@@ -297,6 +297,11 @@ class DHOnPolicyRunner:
                 f"""{'AMP score (agent/demo):':>{pad}} {amp_stats['disc_score']:.3f} / {amp_stats['disc_demo_score']:.3f}\n"""
                 f"""{'AMP style reward (walk):':>{pad}} {amp_stats['style_reward']:.5f}\n"""
             )
+            # exp1.5: 门控健康率（-1=门控未启用）
+            if amp_stats.get("buffer_healthy", -1.0) >= 0.0:
+                log_string += (
+                    f"""{'AMP buffer healthy:':>{pad}} {amp_stats['buffer_healthy']:.3f}\n"""
+                )
         log_string += (
             f"""{'-' * width}\n"""
             f"""{'Total timesteps:':>{pad}} {self.tot_timesteps}\n"""
@@ -321,14 +326,19 @@ class DHOnPolicyRunner:
             saved_dict["amp_disc_optimizer_state_dict"] = self.alg.disc_optimizer.state_dict()
         torch.save(saved_dict, path)
 
-    def load(self, path, load_optimizer=True):
+    def load(self, path, load_optimizer=True, skip_disc=False):
         loaded_dict = torch.load(path)
         self.alg.actor_critic.load_state_dict(loaded_dict["model_state_dict"])
         if load_optimizer:
             self.alg.optimizer.load_state_dict(loaded_dict["optimizer_state_dict"])
             self.alg.state_estimator_optimizer.load_state_dict(loaded_dict["es_optimizer_state_dict"])
         # exp1: 判别器状态恢复（无 AMP 键的旧 ckpt 自动跳过——DHPPO ckpt 兼容加载）
-        if getattr(self.alg, "amp_discriminator", None) is not None \
+        # exp1.5: skip_disc=True 强制跳过（--disc_fresh）——死锁 D 的 trunk 已特化于
+        # 平凡分离面（速度幅度/手臂抖动），继承 = 新一轮学习带着旧偏置，几十 iter
+        # 内调大残余作弊维权重重新钉死。从零初始化 + 归一化统计量重积累，强迫 D
+        # 在 agent 分布（EMA+门控后）与 demo 最对称的窗口期重新审题。
+        if not skip_disc \
+                and getattr(self.alg, "amp_discriminator", None) is not None \
                 and "amp_discriminator_state_dict" in loaded_dict:
             self.alg.amp_discriminator.load_state_dict(loaded_dict["amp_discriminator_state_dict"])
             if load_optimizer and "amp_disc_optimizer_state_dict" in loaded_dict:

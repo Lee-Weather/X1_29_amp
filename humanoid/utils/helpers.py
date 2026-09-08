@@ -227,6 +227,12 @@ def get_args():
             "help": "Direct checkpoint path to warm-start from (cloud resume mode); bypasses --resume log-dir scanning. Optimizer state not loaded (fine-tune). Falls back to a repo-wide model_*.pt search if the path is missing.",
         },
         {
+            "name": "--disc_fresh",
+            "action": "store_true",
+            "default": False,
+            "help": "With --ckpt_path: skip loading the AMP discriminator state (fresh re-init). Breaks inherited deadlock priors; normalization stats re-accumulate.",
+        },
+        {
             "name": "--headless",
             "action": "store_true",
             "default": False,
