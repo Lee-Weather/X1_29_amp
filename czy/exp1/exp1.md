@@ -12,7 +12,7 @@
 | exp0.3 | 2026-09-04 | 根因导向微调（不用 AMP）：压动作幅度（action_scale 0.3+smoothness×2.5+clip 3）治 bang-bang 前扑 + gait 调度改出生/结尾站立治停不住 + ref_joint_pos 加压制参考架空；回放零摔倒+站得住+corr 0.91，但 0.4/0.6 原地踏步不平移 | ⚠️部分达标（已测试） | TASK_20260904_086(L4·账号6) | limxmtjqd2kli2rjom@emalupe.com（账号6） | model_6000.pt |
 | exp1 | 2026-09-07 | AMP 判别器引入（robolab 移植）：DHPPOAMP + LSGAN style reward lerp 融合替代 ref_joint_pos 逐关节 L2 + task 锐化（σ20/low_speed 加重）治踏步；demo 库复用 ref_lib.pt 三段差分特征。**失败**：D 86 iter 饱和死锁（agent -0.995 钉死、style≈0），1267 iter 止损（§8） | ❌失败 | TASK_20260907_046(停) | limxmtjqe95pp63oab（当前CLI） | — |
 | exp1.1 | 2026-09-07 | exp1 修复：demo 侧混静立窗 + disc_lr 减半。**失败**：it30 即钉死（比 exp1 更快），静立窗位形错配 + 平凡可分根因未除（§10）；083 转纯 task 锐化基线后亦被停 | ❌失败 | TASK_20260907_083(停) | 同上 | — |
-| exp1.2 | 2026-09-07 | §11 label smoothing 方案推翻（换 label 不解平凡可分）→ **exp0.2 底模 resume + AMP**：新增 --ckpt_path 直连加载；静立窗 default_dof_pos；**发现量纲淹没隐藏根因**（style 上限 0.015 vs task O(6)，梯度弱 60 倍）scale 1.5→100。本地验证：加载✅ style×54✅ 无破坏✅，D 分离待云端长程检验（§12） | ▶️待云端 | — | 同上 | 底模 czy/data/exp0.2/model_6000.pt |
+| exp1.2 | 2026-09-07 | §11 label smoothing 方案推翻（换 label 不解平凡可分）→ **exp0.2 底模 resume + AMP**：新增 --ckpt_path 直连加载；静立窗 default_dof_pos；**发现量纲淹没隐藏根因**（style 上限 0.015 vs task O(6)，梯度弱 60 倍）scale 1.5→100。训练全程监控"健康"（score 收窄/style 爬升/reward 翻倍）但**回放判死：0.4/0.6 指令完全冻结，行走能力被拆**（对照底模同流程会走）——站立成为新奖励面+静立窗 style 的 net 最优，监控三绿是站立体化假阳性（§12.7） | ❌失败（新失败模式） | TASK_20260907_113(新账号) | limxmtjqfkh52btio6 | model_11999.pt |
 
 ---
 
@@ -781,6 +781,92 @@ task（exp1 系列 FLAT config）         →  实测 O(6-15)/步
 
 - **健康形态**：agent score 缓慢上移（-0.98 → -0.8 …），style reward 爬升，ep_len 不崩
 - **失败形态**：agent score 钉死 -0.98 且 style 停在 ~0.05 不动 → 分布不重叠假说成立 → exp1.3 方向：D 网络缩容 / 特征降维（去 dof_vel 只留 dof_pos）/ demo 侧混入 agent 噪声增强
+
+#### 7. 实验结果（2026-09-08，训练完成 + 回放判读：❌失败——新失败模式"行走能力被拆"）
+
+训练：TASK_20260907_113（新账号 limxmtjqfkh52btio6，L4，底模 model_6000 → model_11999，增量 6000 iter 约 5.8h）。
+
+**训练中监控（全程"健康"形态，事后证明为假阳性）**：
+
+| iter | reward | ep_len | agent score | demo score | style | d_loss |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6111 | 57.6 | 1686 | -0.971 | 0.968 | 0.107 | 0.020 |
+| 7581 | 84.1 | 2210 | -0.935 | 0.934 | 0.194 | 0.031 |
+| 8226 | 96.4 | 2190 | -0.908 | 0.904 | 0.241 | 0.051 |
+
+score 差距 1.87→1.81 持续收窄、d_loss 0.02→0.05（D 越来越难分）——当时判读为"policy 分布靠近 demo"。**真相：靠近的是静立/微动分布，不是行走分布**。
+
+**回放判读（model_11999，play 速度阶梯 0→0.4→0.6→0，174 列诊断 CSV）**：
+
+| 段 | cmd | 实际vx | Δpos_x | 脚z幅 | action RMS | exp0.2 底模对照（9/4 同流程回放） |
+| --- | --- | --- | --- | --- | --- | --- |
+| 站立0 | 0 | 0.006 ✅ | 0.028 | 0.09 | 0.117 | 自走 0.266（停不住） |
+| 前进0.4 | 0.4 | **0.000 ❌** | 0.000 | **0.000** | 0.065 | **0.861（超速215%，在走）** |
+| 前进0.6 | 0.6 | **-0.001 ❌** | -0.003 | **0.000** | 0.048 | **1.102（超速184%，在走）** |
+| 停止0 | 0 | 0.001 ✅ | 0.004 | 0.000 | — | 0.425（停不住） |
+
+**核心发现：行走能力被完全拆掉**。0.4/0.6 指令下 Δpos=0、双脚 z 幅=0、膝 vel≈0.03——policy 输出冻结；且指令越大 action 幅度越小（0.117→0.065→0.048，"大指令→僵住"映射）。对照 exp0.2 底模同流程回放（超速但在走、明显迈步），确认行走能力是 resume 训练期间丢失的，非回放环境差异。
+
+**根因链（推定，待云端回放复核）**：
+
+1. **静立窗混入的合谋**：demo 侧按 stand_ratio 混 default_dof_pos 静立窗（exp1.1 修复保留）→ D 被教会"静立窗也算 demo"→ policy 站立/微动同样能吃 style 分。score 收窄有一部分是"静立匹配"假象
+2. **站立成为新奖励面的 net 最优**：行走 = 能量罚（action_smoothness/torques）+ 真走暴露 bang-bang 被 D 打低分（style→0）+ 超速罚风险；站立 = style 静立分 + 省能量 + ep_len 长（bootstrapping 收益）。σ20 锐化下 tracking 4% 损失远小于上述收益
+3. **resume 奖励面迁移**：exp0.2 的行走是旧奖励面（σ 旧值 + ref_joint_pos 2.4）训出的；resume 后奖励面大改（σ20 + low_speed -2 + ref_joint_pos 0 + AMP style），旧行为在新区间持续失血，6000 iter 足以把它拆干净
+
+**教训（回答"好基模加强 AMP"的边界）**：好基模提供分布重叠区，但 **AMP 只放大"基模与 demo 已有的相似方向"，不保护基模能力**——当 style 梯度方向（静立匹配）与 task 需求（行走保持）冲突时，AMP 会主动拆掉行走。两阶段方案里底模与 AMP 的 demo 侧预处理（静立窗混入）必须联合设计。
+
+**监控判据修订（下轮起用）**：训练监控必须加回放抽查——reward↑/score↑/style↑ 三绿不能证明行走保留；看 `rew_feet_air_time`、`feet_contact_number`（行走应 ~1.0-1.3 且摆动相存在）与 `rew_low_speed`（walk 段大额负值 = 没在走）。
+
+三件套：`czy/data/exp1.2/{model_11999.pt, play_output.mp4, isaac_diag.csv}`。
+
+### 13. 实验 exp1.3 方案：拆除三个"站立补贴"——AMP 奖励真空原则（2026-09-08，待审批）
+
+#### 1. exp1.2 冻结根因的完整账本（why standing wins）
+
+行走 env 中"站立不动"的每步收支（终期日志反推）：
+
+| 收入项 | 站立所得 | 说明 |
+| --- | --- | --- |
+| tracking_ang_vel | ~+0.5 满分 | cmd yaw=0、站立 yaw=0 → exp(0)=1 |
+| 姿态类（orientation/base_height/feet_dist/knee_dist/contact_number/vel_mismatch） | ~+2.9 | 站立全额领取 |
+| AMP style | +0.4×0.141≈**+0.06** | **demo 混 26% 静立窗 → D 认可静立 = demo** |
+| tracking_lin_vel（σ20, err=0.4） | +0.04 | 全或无，站立与超速同得 4% |
+| low_speed（too_slow -2×1.0） | -2.0 | 唯一惩罚 |
+| **净额** | **≈ +1.5/步** | only_positive_rewards=True 兜底 ≥0 |
+
+对照 exp0.2 超速步态在新奖励面下的收支：tracking≈0.04（σ20 全或无）+ too_fast **-1**（比 too_slow 轻！）+ 能量罚 + style≈0.02（bang-bang 被 D 打低）——**旧行为收入崩塌至 ~1/步，低于站立 1.5/步**。排名翻转后 6000 iter 滑入冻结盆地，且冻结自锁：不摆腿 → feet_air_time(权重1.2) 永远为 0 → 无摆腿梯度。
+
+**三个 robolab 没有的"站立补贴"**：① gait 调度 26% 站立段 + stand_still 3.5（练站立技能本身没错，但占了 1/4 训练时间在排练冻结）② demo 静立窗混合 → AMP 给冻结发 style 工资 ③ only_positive_rewards 吸收惩罚（-2 被正收益质量抵消）。robolab 的 demo 100% 行走、无站立段、无 stand_still、无静立混合——**AMP 在"运动奖励真空"里工作，没有第二个收入来源**。
+
+#### 2. 修改内容（3 文件，~10 行）
+
+| # | 修改 | 位置 | 旧→新 | 理由 |
+| --- | --- | --- | --- | --- |
+| 1 | **stand_ratio → 0**（demo 纯行走） | env `_sample_amp` 调用处 | 按站立占比混合 → 固定 0.0 | 拆 AMP 冻结工资：纯行走 demo 下站立 style≈0.05、真步态可达 1.0，AMP 恢复"只奖励走路" |
+| 2 | **low_speed 权重 1.0→2.0** | config rewards | too_slow -2×1.0 → ×2.0=-4 | -4 > 站立正收益 3.4 → walk env 站立净额触 0 钳位，行走（~2.8-4.6）明确胜出；保持 only_positive_rewards 不动（稳定性） |
+| 3 | **ref_joint_pos 0→0.5** | config rewards | 0 → 0.5 | exp1 以"AMP 替代它"为由删除，实测 AMP 标量太粗保不住姿态；恢复半值作逐关节密集锚，防迁移期步态崩解（exp0.2 原值 2.4） |
+
+不改：lerp 0.6 / scale 100 / σ20 / gait 调度占比 / stand_still 门控（已正确按指令门控）/ feet_air_time 1.2（摆腿恢复后自然生效）。resume 源：**exp0.2 model_6000**（不是 exp1.2 的冻结 ckpt）。
+
+#### 3. 预期判据（冻结检测器，it<300 定生死）
+
+| 指标 | exp1.2 冻结形态 | exp1.3 健康形态 |
+| --- | --- | --- |
+| rew_feet_air_time | ≈0.0002（不摆腿） | **it<300 回到 >0.1 且爬升** |
+| rew_low_speed | -0.8（吸收后残值） | >0 或小负（too_slow 消失） |
+| AMP style (walk) | 0.14（静立匹配假象） | 先跌至 ~0.05 再随步态塑形爬升 |
+| agent score | -0.91（静立匹配） | 与 style 同步的真实上移 |
+| **中途回放**（it+500，本地 64env 快测） | — | 0.4 段 vx>0.2 即续跑 |
+
+**止损**：it500 feet_air_time 仍 <0.01 → 冻结未解 → exp1.4 方向：行为级 style 门控（仅摆腿 env 吃 style）/ 站立段占比压 15% / σ 迁移课程。
+
+#### 4. 修改文件
+
+| 文件 | 改动 |
+| --- | --- |
+| `humanoid/envs/x1/x1_dh_stand_env.py` | `_sample_amp` 调用 stand_ratio 固定 0.0（1 行） |
+| `humanoid/envs/x1/x1_dh_stand_config.py` | low_speed 1.0→2.0、ref_joint_pos 0→0.5（2 行） |
+| `czy/exp1/exp1.md` | 本节（方案存档） |
 
 ### 附：决策点（已拍板 2026-09-07）
 

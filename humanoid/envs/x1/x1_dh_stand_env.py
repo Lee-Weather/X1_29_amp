@@ -787,8 +787,10 @@ class X1DHStandEnv(LeggedRobot):
             self._amp_hist_fill[fill] = False
 
         stand = torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold
-        # exp1.1: demo 侧按当前 agent 站立占比混入静立窗（堵判别器平凡特征）
-        demo = self._sample_amp_demo(stand_ratio=float(stand.float().mean().item()))
+        # exp1.3: stand_ratio 固定 0——exp1.1/1.2 的静立窗混合被 D 学成"静立= demo"，
+        # 行走 env 站立也能吃 style 工资，是 exp1.2 行走能力被拆的根因之一（exp1.md §13）。
+        # 站立技能由 task 侧负责（stand_still + 站立指令满额 tracking，style 被 stand_mask 屏蔽）
+        demo = self._sample_amp_demo(stand_ratio=0.0)
         self.extras["amp"] = {
             "disc_obs": self._amp_hist,        # (N,S,61) 原始特征
             "disc_demo_obs": demo,             # (N,S,61)

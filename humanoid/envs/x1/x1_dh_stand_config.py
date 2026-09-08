@@ -384,7 +384,9 @@ class X1DHStandCfg(LeggedRobotCfg):
             # exp0.3: 1.8→2.4 压幅度后参考可实现（des≈±0.6-0.9 vs mocap±0.45），升压让查表参考主导
             # exp1: 2.4→0.0 归零（用户拍板）——逐关节 L2 只管形态不管平移，恰给踏步发奖；
             # 风格监督移交 AMP 判别器（保留则踏步白拿漏洞仍在且与 style 双重计分打架）
-            ref_joint_pos = 0.0
+            # exp1.3: 0→0.5 半值恢复——exp1.2 实测 AMP 标量 style 太粗保不住姿态（迁移期步态崩解），
+            # 恢复半值作逐关节密集锚；不回 2.4 全值（避免重新主导、与 style 双重计分）
+            ref_joint_pos = 0.5
             feet_clearance = 1.
             feet_contact_number = 2.0
             # gait
@@ -402,7 +404,9 @@ class X1DHStandCfg(LeggedRobotCfg):
             tracking_lin_vel = 2.2  # legacy exp1.3: 1.8→2.2 提升跟踪优先级
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5  # lin_z; ang x,y
-            low_speed = 1.0  # exp1: 0.2→1.0 配合 tracking σ 锐化与 too-slow -2 罚，踏步净收益转负
+            low_speed = 2.0  # exp1: 0.2→1.0 配合 tracking σ 锐化与 too-slow -2 罚，踏步净收益转负
+                            # exp1.3: 1.0→2.0——too_slow -2×2.0=-4 > 行走 env 站立正收益 ~3.4（姿态类+ang tracking+style 工资），
+                            # 冻结净额触 only_positive_rewards 0 钳位，行走明确胜出（exp1.2 冻结核算，exp1.md §13）
             track_vel_hard = 0.5
             # base pos
             default_joint_pos = 1.0
