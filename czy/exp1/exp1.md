@@ -14,7 +14,7 @@
 | exp1.1 | 2026-09-07 | exp1 修复：demo 侧混静立窗 + disc_lr 减半。**失败**：it30 即钉死（比 exp1 更快），静立窗位形错配 + 平凡可分根因未除（§10）；083 转纯 task 锐化基线后亦被停 | ❌失败 | TASK_20260907_083(停) | 同上 | — |
 | exp1.2 | 2026-09-07 | §11 label smoothing 方案推翻（换 label 不解平凡可分）→ **exp0.2 底模 resume + AMP**：新增 --ckpt_path 直连加载；静立窗 default_dof_pos；**发现量纲淹没隐藏根因**（style 上限 0.015 vs task O(6)，梯度弱 60 倍）scale 1.5→100。训练全程监控"健康"（score 收窄/style 爬升/reward 翻倍）但**回放判死：0.4/0.6 指令完全冻结，行走能力被拆**（对照底模同流程会走）——站立成为新奖励面+静立窗 style 的 net 最优，监控三绿是站立体化假阳性（§12.7） | ❌失败（新失败模式） | TASK_20260907_113(新账号) | limxmtjqfkh52btio6 | model_11999.pt |
 | exp1.3 | 2026-09-08 | 拆三个"站立补贴"（stand_ratio→0 / low_speed 1.0→2.0 / ref_joint_pos 0→0.5）+ exp0.2 底模续训。**行走保住**（tracking 0.5+/reward ~104/回放确认在走，"防拆"目标达成，commit 5dd55da）但 **D 死锁回归**：agent score -0.994 钉死、style 0.026——良性死锁，AMP 通道退化为旁观者；分布指纹定位分离面主成分=手臂高频抖动（§14） | ⚠️部分达标（AMP 死锁） | TASK_20260908_241(跑着当 task 锐化基线) | limxmtrzffpgvnsh9w@uberip.com（账号池[1]） | — |
-| exp1.4 | 2026-09-08 | 手臂/腰部 17 关节 action **EMA 低通滤波**（α=0.85，fc≈2.8Hz）：频率维度治本——物理消除手臂高频抖动（D 分离面主成分），真实移动 agent 分布（非缩 D 容量）。本地 64env×60iter 快测通过（含 pip install -e . 重装规范确立）；**代码未提交、云端任务未建** | 🚧实施中 | —（待建） | 同上 | — |
+| exp1.4 | 2026-09-08 | 手臂/腰部 17 关节 action **EMA 低通滤波**（α=0.85，fc≈2.8Hz）：频率维度治本——物理消除手臂高频抖动（D 分离面主成分），真实移动 agent 分布（非缩 D 容量）。本地 64env×60iter 快测通过（含 pip install -e . 重装规范确立）。resume exp0.2 model_6000 + 6001 iter（终点 12001），**双线策略**：AMP 主线（本任务）+ 无 AMP 基模线（另一项目，好底模回流作 resume 源） | 🚧训练中 | TASK_20260908_319 | limxmtrzffpgvnsh9w@uberip.com（账号池[1]） | 目标 model_12001.pt |
 
 ---
 
