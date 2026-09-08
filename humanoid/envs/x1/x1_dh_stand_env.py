@@ -383,6 +383,15 @@ class X1DHStandEnv(LeggedRobot):
     def step(self, actions):
         if self.cfg.env.use_ref_actions:
             actions += self.ref_action
+        # exp1.4: 手臂/腰部 EMA 低通滤波——物理消除高频抖动，真实移动 agent 分布
+        # （治本路线：改变生成侧，而非缩 D 容量让 D 变笨）。EMA 凸组合输出不越
+        # [-clip,clip]，滤波后值经 super().step() 的 clip 进 self.actions，obs 的
+        # last_action 与实际执行一致。alpha=1.0 时退化为直通。
+        alpha = self.cfg.control.arm_action_ema_alpha
+        if alpha < 1.0:
+            filt = self._arm_action_filt * alpha + actions[:, self.arm_dof_indices] * (1 - alpha)
+            actions[:, self.arm_dof_indices] = filt
+            self._arm_action_filt = filt.clone()
         return super().step(actions)
 
     def compute_observations(self):
@@ -545,6 +554,8 @@ class X1DHStandEnv(LeggedRobot):
         self.episode_length_buf[env_ids] = 0
         self.phase_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = 1
+        # exp1.4: 手臂 EMA 滤波状态复位（默认位=0，与 actions[env_ids]=0 对齐）
+        self._arm_action_filt[env_ids] = 0.
         # rand 0 or 0.5
         self.gait_start[env_ids] = torch.randint(0, 2, (len(env_ids),)).to(self.device)*0.5
         
@@ -620,6 +631,26 @@ class X1DHStandEnv(LeggedRobot):
         self.swing_delta_right = swing[6:]
         # 打印 dof 索引表，供 config 逐关节参数（armature 等）人工核对
         print("[DOF] " + ", ".join("{}:{}".format(i, n) for i, n in enumerate(self.dof_names)))
+
+        # ---- exp1.4: 手臂/腰部 action EMA 低通滤波 ----
+        # ref_joint_pos 降为半值(0.5)后手臂缺任务老师，成噪声海绵：PPO noise_std 全关节共享
+        # + 腿部梯度耦合 → 高频抖动（dof_vel std 达 mocap 3.2~10.1 倍），D 分离面主成分。
+        # 索引按关节名解析（lumbar×3 + shoulder/elbow/wrist×14 = 17），硬断言拦截 URDF 变更
+        self.arm_dof_indices = torch.tensor(
+            [i for i, n in enumerate(self.dof_names)
+             if any(k in n for k in ('lumbar', 'shoulder', 'elbow', 'wrist'))],
+            dtype=torch.long, device=self.device)
+        assert len(self.arm_dof_indices) == 17, \
+            "arm dof 解析出 {} 个（期望 17）: {}".format(
+                len(self.arm_dof_indices),
+                [self.dof_names[i] for i in self.arm_dof_indices.tolist()])
+        self._arm_action_filt = torch.zeros(
+            self.num_envs, len(self.arm_dof_indices), device=self.device)
+        print("[EMA] arm/lumbar EMA alpha={}, fc≈{:.1f}Hz, dofs={}".format(
+            self.cfg.control.arm_action_ema_alpha,
+            (1 - self.cfg.control.arm_action_ema_alpha) /
+            (2 * torch.pi * self.cfg.control.arm_action_ema_alpha * self.dt),
+            self.arm_dof_indices.tolist()))
 
         # ---- Phase 2: mocap 参考轨迹库（2a：上半身查表）----
         self.use_mocap_ref = getattr(self.cfg.rewards, "use_mocap_ref", False)

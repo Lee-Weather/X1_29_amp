@@ -179,6 +179,15 @@ class X1DHStandCfg(LeggedRobotCfg):
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 10  # 50hz 100hz
 
+        # exp1.4: 手臂/腰部(17 dof) action EMA 低通滤波系数 alpha
+        # 依据 exp1.3 分布指纹：agent 手臂 dof_vel std 达 mocap 3.2~10.1 倍（右肩 roll 10.1x），
+        # 腿部仅 1.8x、膝 1.0x——D 的分离面主要由手臂高频抖动支撑。
+        # 位置类奖励(L2)罚不住高频小幅抖动（位置误差极小），必须频率维度手段治本。
+        # 滤波: filt = alpha*prev + (1-alpha)*raw，EMA 凸组合输出不越 clip 边界
+        # fc = (1-alpha)/(2*pi*alpha*dt), dt=0.01(100Hz 控制): alpha=0.85 -> fc≈2.8Hz, 群延迟≈0.057s
+        # 手臂质量小不威胁平衡，0.057s 延迟可接受；alpha=1.0 关闭滤波
+        arm_action_ema_alpha = 0.85
+
     class sim(LeggedRobotCfg.sim):
         dt = 0.001  # 200 Hz 1000 Hz
         substeps = 1  # 2

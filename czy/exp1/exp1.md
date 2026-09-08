@@ -13,6 +13,8 @@
 | exp1 | 2026-09-07 | AMP 判别器引入（robolab 移植）：DHPPOAMP + LSGAN style reward lerp 融合替代 ref_joint_pos 逐关节 L2 + task 锐化（σ20/low_speed 加重）治踏步；demo 库复用 ref_lib.pt 三段差分特征。**失败**：D 86 iter 饱和死锁（agent -0.995 钉死、style≈0），1267 iter 止损（§8） | ❌失败 | TASK_20260907_046(停) | limxmtjqe95pp63oab（当前CLI） | — |
 | exp1.1 | 2026-09-07 | exp1 修复：demo 侧混静立窗 + disc_lr 减半。**失败**：it30 即钉死（比 exp1 更快），静立窗位形错配 + 平凡可分根因未除（§10）；083 转纯 task 锐化基线后亦被停 | ❌失败 | TASK_20260907_083(停) | 同上 | — |
 | exp1.2 | 2026-09-07 | §11 label smoothing 方案推翻（换 label 不解平凡可分）→ **exp0.2 底模 resume + AMP**：新增 --ckpt_path 直连加载；静立窗 default_dof_pos；**发现量纲淹没隐藏根因**（style 上限 0.015 vs task O(6)，梯度弱 60 倍）scale 1.5→100。训练全程监控"健康"（score 收窄/style 爬升/reward 翻倍）但**回放判死：0.4/0.6 指令完全冻结，行走能力被拆**（对照底模同流程会走）——站立成为新奖励面+静立窗 style 的 net 最优，监控三绿是站立体化假阳性（§12.7） | ❌失败（新失败模式） | TASK_20260907_113(新账号) | limxmtjqfkh52btio6 | model_11999.pt |
+| exp1.3 | 2026-09-08 | 拆三个"站立补贴"（stand_ratio→0 / low_speed 1.0→2.0 / ref_joint_pos 0→0.5）+ exp0.2 底模续训。**行走保住**（tracking 0.5+/reward ~104/回放确认在走，"防拆"目标达成，commit 5dd55da）但 **D 死锁回归**：agent score -0.994 钉死、style 0.026——良性死锁，AMP 通道退化为旁观者；分布指纹定位分离面主成分=手臂高频抖动（§14） | ⚠️部分达标（AMP 死锁） | TASK_20260908_241(跑着当 task 锐化基线) | limxmtrzffpgvnsh9w@uberip.com（账号池[1]） | — |
+| exp1.4 | 2026-09-08 | 手臂/腰部 17 关节 action **EMA 低通滤波**（α=0.85，fc≈2.8Hz）：频率维度治本——物理消除手臂高频抖动（D 分离面主成分），真实移动 agent 分布（非缩 D 容量）。本地 64env×60iter 快测通过（含 pip install -e . 重装规范确立）；**代码未提交、云端任务未建** | 🚧实施中 | —（待建） | 同上 | — |
 
 ---
 
@@ -873,3 +875,77 @@ score 差距 1.87→1.81 持续收窄、d_loss 0.02→0.05（D 越来越难分�
 1. **ref_joint_pos 2.4→0（推荐）vs 0.5 过渡**：推荐 0——踏步白拿漏洞必须在源头堵死；若担心风格突变过大，可 0.5 但接受归因混杂
 2. **从零（推荐）vs 续训 exp0.3**：续训收敛快（policy 已会站）但 action 分布已收敛、noise_std 低，AMP 新梯度注入效果存疑且归因混杂；从零干净
 3. **是否并行消融任务**（账号7/8 各 ¥50 可用）：amp=True 主实验 + amp=False（纯 task 锐化基线）各一任务并行——多花一份钱，买"AMP 是否真有贡献"的干净归因；不并行则失败时再补跑消融
+
+### 14. 实验 exp1.4：手臂/腰部 action EMA 低通滤波——频率维度治本（2026-09-08，已实施未提交）
+
+#### 1. 上一实验（exp1.3）结果：良性死锁
+
+TASK_20260908_241（exp0.2 底模 + 三修改续训）监控判读：
+
+| 侧面 | 指标 | 数值 | 判读 |
+| --- | --- | --- | --- |
+| task 侧 | tracking_lin/ang、reward、回放 | tracking 0.5+、reward ~104、**在走** | **exp1.3 核心目标"防行走被拆"达成**（对照 exp1.2 冻结） |
+| AMP 侧 | agent score / style (walk) | **-0.994 钉死 / 0.026** | D 死锁回归，与 exp1/exp1.1 同形态 |
+
+结论：行走能力保住了，但 style 通道死了——AMP 退化成旁观者，花 D 的算力买不到任何风格梯度。exp1.4 的任务：**在不牺牲 task 侧健康的前提下复活 AMP**。
+
+#### 2. 根因定位：分布指纹逐关节解剖（决定性数据）
+
+对 exp1.3 期间 agent 轨迹 vs mocap demo 逐关节算 `dof_vel` std 倍率（agent/demo）：
+
+| 关节组 | dof_vel std 倍率 | 判读 |
+| --- | --- | --- |
+| 右臂（肩 roll/yaw、肘 pitch 最重） | **7.8x ~ 10.1x** | 抖动重灾区 |
+| 左臂 | ~3x | 同样超速但轻一半 |
+| 腿部均值 | 1.8x | 轻微 |
+| 右膝 / 左膝 | **1.0x / 0.6x** | **完美匹配**——腿部动作本身就是 demo 风格 |
+
+**D 的 183 维特征里（61×3 步窗），分离面主要由 10 个手臂关节的高频抖动支撑**。腿部已经"像 demo"，D 不需要靠腿区分两边；手臂一抖，D 一个线性组合就能满分分类。
+
+机理：ref_joint_pos 从 2.4 归零（exp1.3 回 0.5 半值）后手臂没有任务老师 → 手臂成**噪声海绵**（PPO noise_std 全关节共享 ~0.21 + 腿部梯度经共享网络传播到手臂头）。右侧 10x vs 左侧 3x 的不对称叠加 URDF 右臂历史问题。
+
+**为什么 exp1.3 的 ref_joint_pos 0.5 救不了**：L2 罚的是位置误差，高频小幅抖动的位置误差极小（抖 ±2° 误差贡献可忽略），但对 dof_vel 特征是 std 直接放大——**位置类奖励在频率维度是瞎的**。历史证据：exp0.2 时代 ref_joint_pos 2.4 全身工作时手臂照样抖。
+
+#### 3. 方案：EMA 低通滤波（治本路线）
+
+方向决策（用户拍板）：**绝不放弃 AMP；缩 D 容量是让 D 变笨，治标不治本**。治本 = 改变 agent 生成侧分布，让抖动这个分离面主成分物理消失：
+
+- **滤波公式**：`filt = α·prev + (1-α)·raw`，作用于手臂+腰部 17 关节（lumbar×3 + shoulder/elbow/wrist×14）的 action
+- **α=0.85**：fc = (1-α)/(2πα·dt)，dt=0.01（100Hz 控制）→ **fc≈2.8Hz**、群延迟 ≈0.057s。（更正：§13 讨论中口算的 1.6Hz 有误，按公式为 2.8Hz。）人类手臂摆动主频 <2Hz，2.8Hz 截止保信号滤噪声
+- **PPO 一致性**：policy 采样 log_prob 在原始 action 上（滤波在 env.step 内、采样之后），obs 的 last_action 用滤波后值（滤波在 super().step() 的 clip 之前写入 actions）→ 观测与实际执行一致；EMA 凸组合保证输出不越 [-clip, clip]
+- **底模 resume 风险**：exp0.2 底模手臂未经滤波训练，突然加滤波手臂行为会突变——手臂质量小不威胁平衡，且 ref_joint_pos 0.5 提供位置锚，可接受
+- **判据逻辑**：D 的分离面主成分消失后，D 无法再用"手臂抖动"分类 → agent score 解冻 → style 梯度恢复 → AMP 重新参与步态塑形
+
+#### 4. 修改内容（2 文件 4 处）
+
+| # | 文件 | 改动 |
+| --- | --- | --- |
+| 1 | `x1_dh_stand_config.py` control 类 | 新增 `arm_action_ema_alpha = 0.85`（含 fc/延迟注释；α=1.0 关闭滤波） |
+| 2 | `x1_dh_stand_env.py` `_init_buffers` | arm dof 索引按名解析（lumbar/shoulder/elbow/wrist，硬断言 ==17）+ `_arm_action_filt` 状态 buffer + [EMA] 启动打印（α/fc/索引） |
+| 3 | `x1_dh_stand_env.py` `step()` | ref_action 叠加后、super() 前：17 关节 action EMA 滤波并写回 |
+| 4 | `x1_dh_stand_env.py` `reset_idx` | `self._arm_action_filt[env_ids] = 0.`（与 actions 复位对齐） |
+
+#### 5. 本地快测（2026-09-08，64 env × 60 iter）
+
+- exit 0，60/60 iter，[EMA] 打印 `alpha=0.85, fc≈2.8Hz, dofs=[6..22]`（lumbar 6-8 + 左臂 9-15 + 右臂 16-22，共 17），AMP 管线每 iter 正常输出，无 NaN/断言
+- 从零训练 60 iter 内 agent score -0.99 属预期（随机策略 D 必然秒分），EMA 效果只能在云端底模续训上判
+- **工程坑（重要，规范确立）**：第一次 64×60 快测跑的是**错误代码**——`python humanoid/scripts/train.py` 的包解析依赖 egg-link，而 `python -c` 验证因 cwd 在 sys.path 总是命中本仓库、失真。重装前 egg-link 指向旧 checkout（12DOF、无 AMP），表现为无 [EMA]/[AMP] 打印、Actor out_features=12。**规范：每次本地测试前先 `pip install -e .`**（用户指示，2026-09-08）
+
+#### 6. 预期判据（云端，exp0.2 底模续训）
+
+| 指标 | exp1.3 死锁形态 | exp1.4 健康形态 |
+| --- | --- | --- |
+| AMP agent score | -0.994 钉死 | **解冻（>-0.9 且持续上移）** |
+| AMP style (walk) | 0.026 | 随步态塑形爬升（>0.1 量级） |
+| 手臂 dof_vel std 倍率（回放 CSV） | 3.2~10.1x | **<2x** |
+| 行走指标（tracking/feet_air_time/reward） | 健康 | **不倒退**（exp1.3 水平之上） |
+
+**止损**：若 D 仍死锁 → 分离面不止手臂，用回放 CSV 重算全身倍率定位新主成分；备选：加大 α（0.9 → fc≈1.8Hz）/ 扩展滤波范围。
+
+#### 7. 风险与预案
+
+| 风险 | 评估 | 预案 |
+| --- | --- | --- |
+| lumbar 滤波影响平衡补偿 | 腰部参与平衡，0.057s 延迟或拖慢响应 | 若平衡退化，把 lumbar 移出滤波（改索引断言 14） |
+| 手臂群延迟 0.057s | 手臂质量小、无平衡职责 | 可接受 |
+| EMA 滤掉有用的高频手臂动作（如摆臂配重） | mocap 手臂主频 <2Hz，2.8Hz 截止在其上 | 若 style 爬升但手臂"僵"，降 α 至 0.8（fc≈4Hz） |
