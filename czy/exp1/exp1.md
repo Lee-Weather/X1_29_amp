@@ -1189,3 +1189,75 @@ EMA（exp1.4）只摧毁旧分离面（手臂抖动），**重置时钟而非拆
 **exp1.7 候选方向**（待拍板）：① 偏航修复（yaw_drift 权重↑ / 指令重采样加 yaw 多样性 / walk_turn 权重调整）；② AMP 复活 reward 侧手段（手臂 action-rate/dof_acc 惩罚——PPO 一致性成立）；③ D 分离面定位（回放 CSV 重算全身逐关节倍率，此时门控已剥站立样本）。
 
 **工程记录**：本地回放段错误 ×4 的根因不是 Vulkan ICD 而是 **DISPLAY 未设**（机器 16:18 重启后 shell 无 X 会话；`DISPLAY=:1` 后渲染恢复正常）——教训：headless 相机渲染仍依赖 X 会话存在。另：回放前必须根目录 `pip install -e .`（本次曾因 egg-link 落到 `/home/robot/F1_train/yanni/...` 旧 checkout，CSV 写错根目录且跑的是旧代码，数据作废重跑）。云端回放任务 148 已停（本地成功后止损）。
+
+## 实验 exp1.7：交替步态重建——速度自适应步频（2026-09-09）
+
+### 1. 问题定位：劈叉滑行的根因是步频-速度结构性失配（exp1.6 回放数据实锤）
+
+exp1.6 回放（isaac_diag.csv，10s×4 段速度阶梯）量化证据——机器人没有形成左右交替迈步，而是一腿前伸一腿后蹬的劈叉滑行：
+
+| 证据 | 数值 | 健康交替步态应有 |
+| --- | --- | --- |
+| 左右髋关节相关系数 | **+0.467（同相）** | <0（反相交替） |
+| 髋活动度 std（左/右） | 0.194 / **0.054（近冻结）** | 两侧对称 0.1+ |
+| 髋角速度自相关 | 无步态周期峰 | 4.78s（yz 周期）处峰 |
+| 摆动事件（10s） | 每脚仅 **1 次** | ≥3 次 |
+| feet_air_time（训练全程） | **0.0015** | ≥0.05 |
+| 双脚触地占比 | 40% | <20% |
+| 足底载荷（左/右） | 227N / 129N（不对称） | 对称 |
+
+根因链：`_get_phase` 时间驱动固定周期（phase = phase_length_buf×dt/cycle_time，cycle=段周期不随指令缩放）。yz demo 0.255 m/s@4.78s=0.61 m/步；指令 0.4/0.6 m/s 时若要跟拍需要 0.95/1.43 m/步——**物理不可达**（腿长上限 ~0.55 m）→ 策略只能弃跟拍：相位时钟照走、腿跟不上，左右同相伸蹬滑行，feet_air_time 归零，foot_slip 惩罚小到忽略。佐证：ref_joint_pos 仅 0.20/0.5（exp1.3 为 0.9+）、low_speed 尾段 -0.38（不达标被罚）、feet_clearance 0.02。
+
+（相位时钟本身正确：实测 4.78s 精确推进，非半速。）
+
+### 2. 方案设计（两项修改，AMP 全链路零改动保归因）
+
+**修改一：速度自适应步频 + 多段路由恢复（根治）**
+
+- `cycle_eff = T_seg × clamp(v_demo/v_cmd, 0.5, 1.6)`——保持 demo 步幅几何（查表轨迹不变），仅按指令/参考速度比缩放节奏：v_cmd>v_demo 步频加快，反之慢放。yz 段 0.6 m/s 指令下周期 4.78→2.39s，步幅需求回到 0.61 m/步可达区。
+- **段参考速度**：真实地面段（yz/turn）按 ref_lib root_pos 水平路径长实测（yz=0.255）；跑步机段（norm/slow）root 静止（皮带抵消位移），用体检表兜底 `{walk_norm:1.23, walk_slow:0.10}`。
+- **多段路由恢复**：exp1.6 全指 yz 是速度失配诱因之一。恢复：`|wz|>0.15→turn`（不缩放，按原速）；`|vx|<0.15→slow`；`0.15≤|vx|<0.8→yz`；`≥0.8→norm`。
+- **相位连续**：原公式 phase=帧数×dt/cycle 在段切换/缩放变化时相位跳变（换段时突降 4.2 倍）。改为持久积分量 `_gait_phase`，在 `_post_physics_step_callback` 每物理步 +dt/cycle_eff 推进（`_get_phase` 纯读保幂等，stand→walk 恢复时取 gait_start 随机半周期起点）。
+
+**修改二：奖励三调（治标兜底）**
+
+| 项 | 旧→新 | 理由 |
+| --- | --- | --- |
+| feet_air_time | 1.2→1.5 | 抬腿加压（0.0015 是滑行直接表现） |
+| foot_slip | -0.1→-0.25 | 触地脚水平速度惩罚翻倍以上 |
+| yaw_drift | -0.8→-1.2 | exp1.6 行走段 Δyaw ±141°/220° 绕圈；步频自适应后漂移源应减弱，此为兜底 |
+
+### 3. 目标判据
+
+- **主判据（回放 CSV）**：左右髋 corr<0（反相）；每脚摆动事件 ≥3 次/10s；feet_air_time ≥0.05；0.4 段 |Δyaw|<45°。
+- **训练曲线**：feet_air_time 起量（it500 ≥0.05）；tracking ≥0.3 不倒退；ref_joint_pos 回升。
+- **分级**：it500 曲线检查点；it2000 中途 ckpt 回放抽查。
+
+### 4. 风险与止损
+
+| 风险 | 缓解 |
+| --- | --- |
+| 周期切换相位跳变 | 积分制相位天然连续（只变速不变跳） |
+| norm 段回归引手臂分离面（AMP D 再换面） | AMP 归因独立；若 style 再跌，exp1.8 定位分离面 |
+| foot_slip 再升 → 滑步硬惩罚（脚粘地） | -0.25 封顶，不再升；异常时回退 -0.1 |
+| clamp 边界步频极端（0.5≈2 倍速） | [0.5,1.6] 上下限钳制，物理可达范围内 |
+
+### 5. 实施记录（2026-09-09）
+
+代码四文件五处：
+
+| 文件 | 修改 |
+| --- | --- |
+| x1_dh_stand_config.py | rewards：`gait_speed_adaptive=True`、`gait_scale_clamp=[0.5,1.6]`、`seg_demo_speed_table={walk_norm:1.23, walk_slow:0.10}`；scales 三调（feet_air_time 1.5 / foot_slip -0.25 / yaw_drift -1.2） |
+| x1_dh_stand_env.py | `_init_mocap_lib`：seg_demo_speed 实测+表兜底、[GAIT] 启动打印；`_current_seg_id` 多段路由；新增 `_current_cycle_time`；`_get_phase` 自适应路径读 `_gait_phase`（幂等）；`_post_physics_step_callback` 相位积分推进；reset/init `_gait_phase` |
+| play.py | 诊断列 cycle_time 改用 `_current_cycle_time()`（自适应后的有效周期） |
+
+本地快测/云端任务记录见下节补。
+
+**本地快测**（64env×40iter resume model_12000 + --disc_fresh + seed=5，2026-09-09）：
+
+- 启动打印验证 ✅：`[GAIT] 自适应步频 ON, clamp=(0.5, 1.6), 段参考速度: {walk_norm: 1.23, walk_slow: 0.105, walk_turn: 1.228, walk_yz: 0.259}`——norm/slow 跑步机段表值兜底生效（实测 root 静止≈0），yz 实测 0.259 与体检一致，turn 实测 1.228（绕圈 root 位移真实，但不缩放故不使用）
+- 曲线不崩 ✅：reward 0.71→30.5 / episode 33→572（exp1.6 快测 35.6/672 同量级）；healthy 0.891、style 0.162、score -0.893/0.857 与 exp1.6 快测相当
+- 新奖励起效：foot_slip -0.105（权重 -0.25 下）、yaw_drift -0.027（权重 -1.2 下）
+- feet_air_time 0.0002 仍低——已知局限：本地小批量（1536 样本/更新）几乎不移动步态行为，劈叉滑行修复的主验在云端（it500 判据 feet_air_time ≥0.05）
+- 数学预检（各指令下 cycle_eff 理论值）：yz@0.4→3.09s、yz@0.6→2.39s（clamp 0.5 触发）、norm@1.2→1.17s、slow@0.05→2.37s（clamp 1.6 触发）——步幅需求全部回到 ≤0.61 m/步可达区

@@ -380,6 +380,15 @@ class X1DHStandCfg(LeggedRobotCfg):
         feet_to_ankle_distance = 0.041
         cycle_time = 0.7
 
+        # ---- exp1.7: 速度自适应步频（劈叉滑行根治，§17）----
+        # 机理：固定周期下指令速度越高步幅需求越大（0.6 m/s@4.78s 需 1.43 m/步，物理不可达）
+        # → 策略弃跟拍滑行（exp1.6 回放：左右髋 corr +0.47 同相、feet_air_time 0.0015）。
+        # 改法：cycle_eff = T_seg × clamp(v_demo/v_cmd)，保持 demo 步幅几何、节奏随指令缩放。
+        gait_speed_adaptive = True
+        gait_scale_clamp = [0.5, 1.6]   # scale 上下限：防极端步频（0.5≈2 倍速播放，1.6≈慢放）
+        # 跑步机段 root 静止（实测速度 0），用体检表值兜底；yz/turn 真实地面按 root 位移实测
+        seg_demo_speed_table = {"walk_norm": 1.23, "walk_slow": 0.10}
+
         # ---- Phase 2: mocap 参考轨迹（2b：全身查同一段轨迹，腿臂同帧推进天然同拍；False=2a 回退）----
         # 段周期来自 ref_lib.pt（walk_norm 1.143s / walk_turn 1.242s / walk_slow 1.484s），
         # use_mocap_ref=True 时行走 env 的 _get_phase 逐 env 用所在段周期，cycle_time 仅站立/回退时生效
@@ -404,14 +413,14 @@ class X1DHStandCfg(LeggedRobotCfg):
             feet_clearance = 1.
             feet_contact_number = 2.0
             # gait
-            feet_air_time = 1.2
-            foot_slip = -0.1
+            feet_air_time = 1.5   # exp1.7: 1.2→1.5 加压抬腿（exp1.6 全程 0.0015，腿抬不起来是劈叉滑行的直接表现）
+            foot_slip = -0.25     # exp1.7: -0.1→-0.25 加压（滑行=脚在地面拖，触地脚水平速度惩罚翻倍以上；再升有滑步硬惩罚风险，见 §17 止损）
             feet_distance = 0.2   # exp0.3: 0.3→0.2 回退（exp0.2 证实带来 vx 过冲副作用，收益不明显）
             knee_distance = 0.2
             feet_contact_number = 2.4  # legacy exp1.3: 2.0→2.4 强化左右步节拍对称（治偏航离散累积）
             # lateral
             lat_vel = -2.0        # legacy exp1.1: -1.2->-2.0 加压（exp1 净漂 -0.10/-0.12 未压住）
-            yaw_drift = -0.8      # legacy exp1.3: 新增偏航角速度线性惩罚（无转向指令时生效）
+            yaw_drift = -1.2      # exp1.7: -0.8→-1.2 加压（exp1.6 回放 0.6 m/s 段 yaw 累积漂移；步频自适应后漂移源应减弱，此为兜底）
             # contact 
             feet_contact_forces = -0.01
             # vel tracking

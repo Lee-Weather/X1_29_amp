@@ -142,6 +142,11 @@ class X1DHStandEnv(LeggedRobot):
             # Phase2: 行走 env 的周期逐 env 取所在参考段的 gait_period（mocap 步频），站立/回退用全局 cycle_time
             if getattr(self, "use_mocap_ref", False):
                 self.seg_id = self._current_seg_id()   # 每次按当前指令即时算（_get_phase 会先于 compute_ref_state 被调用）
+                if getattr(self.cfg.rewards, "gait_speed_adaptive", False):
+                    # exp1.7: 相位改为持久积分量（_post_physics_step_callback 推进），周期随指令
+                    # 自适应缩放时段切换/缩放变化相位天然连续（只变速不变跳）；本函数纯读，幂等
+                    phase = self._gait_phase * (~stand_command)
+                    return phase
                 cycle_time = torch.full_like(self.phase_length_buf, cycle_time, dtype=torch.float)
                 # 相位周期（秒）= 段周期帧数 / 库帧率（如 57帧/50Hz = 1.143s）
                 cycle_time[~stand_command] = \
@@ -154,19 +159,45 @@ class X1DHStandEnv(LeggedRobot):
         return phase
 
     def _current_seg_id(self):
-        """指令 → 参考段索引（向量化）。exp1.6: |wz|>0.15→walk_turn；其余行走指令→walk_yz
+        """指令 → 参考段索引（向量化）。exp1.7: 多段路由恢复（exp1.6 曾全指 yz）
 
-        exp1.6 改法：前进全走 walk_yz（真实地面直线行走 0.255 m/s，左膝 std 0.416 为
-        walk_norm 两倍——摆腿充分）。原 slow/norm 桶（跑步机 ~0.1 m/s 极慢步）从 ref
-        路由摘除但保留在库中（AMP 抽样继续用，慢步风格样本不浪费）。站立指令不受
-        路由影响（ref_joint_pos 的 stand_command 分支覆盖为 default 位姿）。
+        路由：|wz|>0.15→walk_turn（优先，转向可伴随前进）；其余按 |vx| 分桶：
+        |vx|<0.15→walk_slow，0.15≤|vx|<0.8→walk_yz，|vx|≥0.8→walk_norm。
+        exp1.6 教训：全段指 yz 时 0.4/0.6 m/s 指令下固定 4.78s 周期步幅需求
+        0.95/1.43 m/步物理不可达 → 策略弃跟拍滑行。exp1.7 配合自适应步频
+        （_current_cycle_time）恢复低速段兜底与高速段覆盖。
         """
         wz = self.commands[:, 2]
+        vx = self.commands[:, 0]
         turn = self.seg_names.index("walk_turn")
+        slow = self.seg_names.index("walk_slow")
         yz = self.seg_names.index("walk_yz")
+        norm = self.seg_names.index("walk_norm")
         seg_id = torch.full_like(self.phase_length_buf, yz)
-        seg_id[torch.abs(wz) > 0.15] = turn
+        no_turn = torch.abs(wz) <= 0.15
+        seg_id[no_turn & (torch.abs(vx) >= 0.8)] = norm
+        seg_id[no_turn & (torch.abs(vx) < 0.15)] = slow
+        seg_id[~no_turn] = turn
         return seg_id
+
+    def _current_cycle_time(self):
+        """per-env 有效步态周期（秒）。exp1.7: cycle_eff = T_seg × clamp(v_demo/v_cmd, lo, hi)
+
+        机理：保持 demo 步幅几何（查表轨迹不变），仅按指令/参考速度比缩放节奏——
+        v_cmd > v_demo → scale<1 步频加快；v_cmd < v_demo → scale>1 慢放。
+        turn 段不缩放（原地/绕圈转向 demo 本身按原速播放）。stand env 的返回值
+        无意义（相位被 stand_command 掩蔽），v_cmd 下限 1e-3 仅防零除。
+        """
+        seg_cycle = self.seg_period_frames[self.seg_id].float() / self.seg_fps[self.seg_id]
+        if not getattr(self.cfg.rewards, "gait_speed_adaptive", False):
+            return seg_cycle
+        lo, hi = self.cfg.rewards.gait_scale_clamp
+        v_demo = self.seg_demo_speed[self.seg_id]
+        v_cmd = torch.clamp(self.commands[:, 0].abs(), min=1e-3)
+        scale = torch.clamp(v_demo / v_cmd, lo, hi)
+        is_turn = self.seg_id == self.seg_names.index("walk_turn")
+        scale = torch.where(is_turn, torch.ones_like(scale), scale)
+        return seg_cycle * scale
 
     def _get_stance_mask(self):
         # return float mask 1 is stance, 0 is swing
@@ -272,6 +303,18 @@ class X1DHStandEnv(LeggedRobot):
             Default behaviour: Compute ang vel command based on target and heading, compute measured terrain heights and randomly push robots
         """
         self.phase_length_buf += 1
+        # ---- exp1.7: 相位积分推进（自适应步频路径，§17）----
+        # _get_phase 每步被多处调用必须幂等，推进只能放这里（每物理步恰一次）。
+        # 段切换/指令重采样只改变推进速率 cycle_eff，相位本身连续不跳变。
+        if getattr(self, "use_mocap_ref", False) and getattr(self.cfg.rewards, "gait_speed_adaptive", False):
+            self.seg_id = self._current_seg_id()
+            cycle_eff = self._current_cycle_time()
+            stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
+            walk = ~stand_command
+            resumed = walk & (self._gait_phase == 0)   # 刚从站立恢复（或初始）：从随机半周期起点开始
+            self._gait_phase = torch.where(resumed, self.gait_start.float(), self._gait_phase)
+            self._gait_phase = torch.where(
+                walk, self._gait_phase + self.dt / cycle_eff, torch.zeros_like(self._gait_phase))
         self._resample_commands()
         if self.cfg.commands.heading_command:
             forward = quat_apply(self.base_quat, self.forward_vec)
@@ -556,6 +599,7 @@ class X1DHStandEnv(LeggedRobot):
         self.feet_air_time[env_ids] = 0.
         self.episode_length_buf[env_ids] = 0
         self.phase_length_buf[env_ids] = 0
+        self._gait_phase[env_ids] = 0.   # exp1.7: 相位积分复位（恢复行走时由 resumed 逻辑取 gait_start）
         self.reset_buf[env_ids] = 1
         # exp1.4: 手臂 EMA 滤波状态复位（默认位=0，与 actions[env_ids]=0 对齐）
         self._arm_action_filt[env_ids] = 0.
@@ -612,6 +656,7 @@ class X1DHStandEnv(LeggedRobot):
         self.phase_length_buf = torch.zeros(
             self.num_envs, device=self.device, dtype=torch.long)
         self.gait_start = torch.randint(0, 2, (self.num_envs,)).to(self.device)*0.5
+        self._gait_phase = torch.zeros(self.num_envs, device=self.device)  # exp1.7: 相位积分（自适应步频路径）
 
         # 29DOF 支持：腿部 dof 索引按关节名解析，不依赖 URDF 关节顺序
         # （12DOF URDF 下解析结果即 0-11，行为与旧硬编码完全等价）
@@ -709,6 +754,26 @@ class X1DHStandEnv(LeggedRobot):
             "{}(T={},P={},A={})".format(s, int(self.seg_len[k]), int(self.seg_period_frames[k]),
                                         int(self.seg_anchor[k]))
             for k, s in enumerate(self.seg_names)))
+
+        # ---- exp1.7: 段参考速度（§17 自适应步频）----
+        # 真实地面段（yz/turn）按 root 水平轨迹路径长实测；跑步机段（norm/slow）root 静止
+        # （皮带抵消位移，实测≈0），用 config 体检表值兜底。
+        self.seg_demo_speed = torch.zeros(num_seg, dtype=torch.float, device=self.device)
+        speed_table = getattr(self.cfg.rewards, "seg_demo_speed_table", {}) or {}
+        for k, s in enumerate(self.seg_names):
+            root_xy = lib[s]["root_pos"][:, :2]              # (T,2) 水平轨迹
+            Tk = int(self.seg_len[k])
+            path_len = torch.norm(root_xy[1:] - root_xy[:-1], dim=1).sum() if Tk > 1 else 0.
+            v_meas = float(path_len) * float(self.seg_fps[k]) / max(Tk, 1)  # 路径长×fps/帧数 = m/s
+            v_cfg = float(speed_table.get(s, 0.))
+            # 表值>0 且实测远小于表值（<50%）→ 判定跑步机静止，用表值；否则实测优先
+            self.seg_demo_speed[k] = v_meas if (v_cfg <= 0 or v_meas > 0.5 * v_cfg) else v_cfg
+        if getattr(self.cfg.rewards, "gait_speed_adaptive", False):
+            print("[GAIT] 自适应步频 ON, clamp={}, 段参考速度: {}".format(
+                tuple(self.cfg.rewards.gait_scale_clamp),
+                {s: round(float(self.seg_demo_speed[k]), 3) for k, s in enumerate(self.seg_names)}))
+        else:
+            print("[GAIT] 自适应步频 OFF（固定段周期）")
 
     # ================= exp1: AMP 判别器特征管线 =================
     def _init_amp(self, amp_cfg):

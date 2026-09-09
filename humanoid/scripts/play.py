@@ -340,13 +340,14 @@ def play(args):
         ph = env._get_phase()[robot_index].item() % 1.0
         diag["phase_sin"].append(math.sin(2 * math.pi * ph))
         diag["phase_cos"].append(math.cos(2 * math.pi * ph))
-        # 有效周期：mocap 行走段 = 段周期帧数/库帧率；站立/回退 = 全局 cycle_time
+        # 有效周期：mocap 行走段 = 段周期/缩放（exp1.7 自适应步频后为 _current_cycle_time）；
+        # 站立/回退 = 全局 cycle_time
         eff_cycle = env_cfg.rewards.cycle_time
         if getattr(env, "use_mocap_ref", False):
             walking = torch.norm(env.commands[robot_index, :3]).item() > env_cfg.commands.stand_com_threshold
             if walking:
-                sid = int(env._current_seg_id()[robot_index].item())
-                eff_cycle = env.seg_period_frames[sid].item() / env.seg_fps[sid].item()
+                env.seg_id = env._current_seg_id()
+                eff_cycle = float(env._current_cycle_time()[robot_index].item())
         diag["cycle_time"].append(eff_cycle)
         diag["smoothed_speed"].append(0.0)
         diag["active_stage"].append(0)
@@ -595,7 +596,9 @@ def play(args):
 
 if __name__ == '__main__':
     EXPORT_POLICY = False
-    RENDER = True
+    # exp1.6 回放 workaround（2026-09-09）：本机 Vulkan/相机层段错误（×2 复现，CUDA 正常），
+    # 临时经环境变量 PLAY_RENDER=0 关渲染先出 CSV；恢复视频再置 1 或走云端 gm_mode 回放
+    RENDER = os.environ.get("PLAY_RENDER", "1") != "0"
     FIX_COMMAND = True
     args = get_args()
     play(args)
