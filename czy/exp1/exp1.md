@@ -1261,3 +1261,5 @@ exp1.6 回放（isaac_diag.csv，10s×4 段速度阶梯）量化证据——机�
 - 新奖励起效：foot_slip -0.105（权重 -0.25 下）、yaw_drift -0.027（权重 -1.2 下）
 - feet_air_time 0.0002 仍低——已知局限：本地小批量（1536 样本/更新）几乎不移动步态行为，劈叉滑行修复的主验在云端（it500 判据 feet_air_time ≥0.05）
 - 数学预检（各指令下 cycle_eff 理论值）：yz@0.4→3.09s、yz@0.6→2.39s（clamp 0.5 触发）、norm@1.2→1.17s、slow@0.05→2.37s（clamp 1.6 触发）——步幅需求全部回到 ≤0.61 m/步可达区
+
+**云端任务**（2026-09-09）：commit 52a8eba；账号[4] limxmtrzhd234eie6t（[3] 额度耗尽标记，新项目 PRO_20260909_022——跨账号项目不共享，[4] 下看不到 PRO_20260909_002）；**TASK_20260909_181**，4090D（ESKU000001/SKUSL000002，¥5.4/时）+ 镜像 BJX00000001/V000124（isaac-gym-v19）；`gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand --run_name=exp1_7_gait --headless --seed=5 --ckpt_path=X1_29_amp/model_12000.pt --disc_fresh --max_iterations=6000`（12000→18000，底模仓库直载）。监控：日志 >1h 才出属正常；首验 it500 feet_air_time ≥0.05、tracking 不倒退、healthy 门控正常。
