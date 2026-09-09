@@ -186,7 +186,12 @@ class X1DHStandCfg(LeggedRobotCfg):
         # 滤波: filt = alpha*prev + (1-alpha)*raw，EMA 凸组合输出不越 clip 边界
         # fc = (1-alpha)/(2*pi*alpha*dt), dt=0.01(100Hz 控制): alpha=0.85 -> fc≈2.8Hz, 群延迟≈0.057s
         # 手臂质量小不威胁平衡，0.057s 延迟可接受；alpha=1.0 关闭滤波
-        arm_action_ema_alpha = 0.85
+        # exp1.6（2026-09-09）: 0.85 -> 1.0 撤除滤波。云端 A/B 实锤（exp1.md §15.9）：
+        # 同底模仅加 EMA 即加载即冻结（319 tracking 0.0006 vs 241 无 EMA 0.503）——
+        # env 侧滤波在 resume 场景同时造成执行层冲击（腰部/手臂耦合反馈环断裂）
+        # 与 PPO 一致性破坏（log_prob 记原始动作、env 执行滤波动作）。
+        # 手臂抖动分离面若回归，改走 reward 侧（action-rate/dof_acc 惩罚）。
+        arm_action_ema_alpha = 1.0
 
     class sim(LeggedRobotCfg.sim):
         dt = 0.001  # 200 Hz 1000 Hz
@@ -440,6 +445,11 @@ class X1DHStandCfg(LeggedRobotCfg):
         enabled = True      # 总开关：False → env 不产 extras["amp"]，DHPPOAMP 自动退化为纯 task 基线（消融用）
         disc_obs_steps = 3  # 判别器时间窗（控制步），与 algorithm.amp_disc_obs_steps 保持一致
         demo_file = ''      # 空 → resources/motions/processed/ref_lib.pt（与 use_mocap_ref 同源）
+        # exp1.6: demo 段抽样权重（multinomial），顺序 = sorted 段名（walk_norm, walk_slow, walk_turn, walk_yz）。
+        # yz 加倍：ref 路由已前进全指 walk_yz（0.255 m/s 真实地面行走），D 侧同步加重防止
+        # "ref 教 yz、style 评跑步机慢步" 的通道分裂；slow 减半（0.1 m/s 极慢步占比原 39%）。
+        # 空列表 = 均匀抽样（旧行为）
+        demo_seg_weights = [1.0, 0.5, 1.0, 2.0]
 
     class normalization:
         class obs_scales:

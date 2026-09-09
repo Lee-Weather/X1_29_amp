@@ -154,14 +154,17 @@ class X1DHStandEnv(LeggedRobot):
         return phase
 
     def _current_seg_id(self):
-        """指令 → 参考段索引（向量化）。|wz|>0.15→walk_turn；|vx|<0.25→walk_slow；else→walk_norm"""
+        """指令 → 参考段索引（向量化）。exp1.6: |wz|>0.15→walk_turn；其余行走指令→walk_yz
+
+        exp1.6 改法：前进全走 walk_yz（真实地面直线行走 0.255 m/s，左膝 std 0.416 为
+        walk_norm 两倍——摆腿充分）。原 slow/norm 桶（跑步机 ~0.1 m/s 极慢步）从 ref
+        路由摘除但保留在库中（AMP 抽样继续用，慢步风格样本不浪费）。站立指令不受
+        路由影响（ref_joint_pos 的 stand_command 分支覆盖为 default 位姿）。
+        """
         wz = self.commands[:, 2]
-        vx = self.commands[:, 0]
         turn = self.seg_names.index("walk_turn")
-        slow = self.seg_names.index("walk_slow")
-        norm = self.seg_names.index("walk_norm")
-        seg_id = torch.full_like(self.phase_length_buf, norm)
-        seg_id[torch.abs(vx) < 0.25] = slow
+        yz = self.seg_names.index("walk_yz")
+        seg_id = torch.full_like(self.phase_length_buf, yz)
         seg_id[torch.abs(wz) > 0.15] = turn
         return seg_id
 
@@ -646,11 +649,14 @@ class X1DHStandEnv(LeggedRobot):
                 [self.dof_names[i] for i in self.arm_dof_indices.tolist()])
         self._arm_action_filt = torch.zeros(
             self.num_envs, len(self.arm_dof_indices), device=self.device)
-        print("[EMA] arm/lumbar EMA alpha={}, fc≈{:.1f}Hz, dofs={}".format(
-            self.cfg.control.arm_action_ema_alpha,
-            (1 - self.cfg.control.arm_action_ema_alpha) /
-            (2 * torch.pi * self.cfg.control.arm_action_ema_alpha * self.dt),
-            self.arm_dof_indices.tolist()))
+        if self.cfg.control.arm_action_ema_alpha < 1.0:
+            print("[EMA] arm/lumbar EMA alpha={}, fc≈{:.1f}Hz, dofs={}".format(
+                self.cfg.control.arm_action_ema_alpha,
+                (1 - self.cfg.control.arm_action_ema_alpha) /
+                (2 * torch.pi * self.cfg.control.arm_action_ema_alpha * self.dt),
+                self.arm_dof_indices.tolist()))
+        else:
+            print("[EMA] DISABLED (alpha=1.0, exp1.6 撤除——env 侧滤波 resume 冲击+PPO 一致性破坏)")
 
         # ---- Phase 2: mocap 参考轨迹库（2a：上半身查表）----
         self.use_mocap_ref = getattr(self.cfg.rewards, "use_mocap_ref", False)
@@ -732,6 +738,16 @@ class X1DHStandEnv(LeggedRobot):
         demo_feat = torch.zeros(T_max, num_seg, feat_dim, device=self.device)
         seg_len = torch.zeros(num_seg, dtype=torch.long, device=self.device)
         seg_stride = torch.zeros(num_seg, dtype=torch.long, device=self.device)
+
+        # exp1.6: demo 段抽样权重（multinomial；空 = 均匀旧行为）。顺序 = sorted 段名
+        w = list(getattr(amp_cfg, "demo_seg_weights", []) or [])
+        if w:
+            assert len(w) == num_seg, \
+                "amp.demo_seg_weights 长度 {} != 段数 {}（段序: {}）".format(len(w), num_seg, seg_names)
+            self._amp_seg_weights = torch.tensor(w, dtype=torch.float, device=self.device)
+        else:
+            self._amp_seg_weights = torch.ones(num_seg, dtype=torch.float, device=self.device)
+        print("[AMP] demo 段权重: {}（段序 {}）".format(w if w else "均匀", seg_names))
 
         for k, s in enumerate(seg_names):
             q = lib[s]["dof_pos"].float().to(self.device)   # (T,29) 绝对角
@@ -838,7 +854,8 @@ class X1DHStandEnv(LeggedRobot):
         融合不受影响：站立 env 的 style 仍被 stand_mask 屏蔽，风格信号只作用于行走 env。
         """
         N = self.num_envs
-        seg = torch.randint(0, self._amp_num_seg, (N,), device=self.device)
+        # exp1.6: 按段权重抽样（multinomial 自动归一；空权重时为均匀，与旧 randint 等价）
+        seg = torch.multinomial(self._amp_seg_weights, N, replacement=True)
         stride = self._amp_seg_stride[seg]
         max_start = (self._amp_seg_len[seg] - (self.amp_disc_steps - 1) * stride - 1).clamp(min=0)
         start = (torch.rand(N, device=self.device) * (max_start + 1).float()).long()

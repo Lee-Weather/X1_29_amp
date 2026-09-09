@@ -102,12 +102,11 @@ class MockEnv:
         self.mocap_full_body = True   # 与 config 一致（2b 全身）
 
     def _current_seg_id(self):
-        wz = self.commands[:, 2]; vx = self.commands[:, 0]
+        # exp1.6 同步：|wz|>0.15→walk_turn；其余行走→walk_yz（前进全走 yz，slow/norm 出路由）
+        wz = self.commands[:, 2]
         turn = self.seg_names.index("walk_turn")
-        slow = self.seg_names.index("walk_slow")
-        norm = self.seg_names.index("walk_norm")
-        seg_id = torch.full_like(self.phase_length_buf, norm)
-        seg_id[torch.abs(vx) < 0.25] = slow
+        yz = self.seg_names.index("walk_yz")
+        seg_id = torch.full_like(self.phase_length_buf, yz)
         seg_id[torch.abs(wz) > 0.15] = turn
         return seg_id
 
@@ -161,19 +160,19 @@ def main():
     leg = env.leg_dof_indices
     N = env.num_envs
 
-    print("=== 1. 指令→段映射 ===")
+    print("=== 1. 指令→段映射（exp1.6：前进全走 walk_yz）===")
     env.commands[:, :] = 0
     env.commands[:, 0] = 0.4
     env.phase_length_buf += 1
     seg = env._current_seg_id()
-    assert (seg == env.seg_names.index("walk_norm")).all(), "vx=0.4 应→walk_norm"
+    assert (seg == env.seg_names.index("walk_yz")).all(), "vx=0.4 应→walk_yz（exp1.6 前进全指 yz）"
     env.commands[:, 0] = 0.1
     seg = env._current_seg_id()
-    assert (seg == env.seg_names.index("walk_slow")).all(), "vx=0.1 应→walk_slow"
+    assert (seg == env.seg_names.index("walk_yz")).all(), "vx=0.1 应→walk_yz（exp1.6 不再分 slow 桶）"
     env.commands[:, 0] = 0.4; env.commands[:, 2] = 0.3
     seg = env._current_seg_id()
     assert (seg == env.seg_names.index("walk_turn")).all(), "wz=0.3 应→walk_turn"
-    print("  [OK] norm/slow/turn 分档正确")
+    print("  [OK] yz/turn 分档正确")
 
     print("=== 2. 行走查表（2b 全身）：ref 全列 = mocap 帧（腿臂同源同拍）===")
     env.commands[:, :] = 0
@@ -189,8 +188,20 @@ def main():
     assert torch.allclose(env.ref_dof_pos, q_expect, atol=1e-5), \
         "2b 全身 ref 应与 mocap 查表帧逐列一致（腿臂同源）"
     var = env.ref_dof_pos.std(dim=0)
-    assert var.min() > 1e-4, f"全身参考应有动态，min std={var.min():.2e}"
-    print(f"  [OK] 全身 29 列与查表帧一致，std∈[{var.min():.3f},{var.max():.3f}]")
+    # exp1.6: walk_yz 手部 4 关节全常数——wrist_roll×2 为填充（无传感器），wrist_pitch×2
+    # 源数据本身全 0（yz 手腕未动）。排除后其余 25 列应有动态，常数列应严格恒定
+    wr = [env.dof_names.index(n) for n in
+          ("left_wrist_pitch_joint", "left_wrist_roll_joint",
+           "right_wrist_pitch_joint", "right_wrist_roll_joint")]
+    mask = torch.ones_like(var, dtype=torch.bool); mask[wr] = False
+    var_dyn = var[mask]
+    assert var_dyn.min() > 1e-4, f"非 wrist 列应有动态，min std={var_dyn.min():.2e}"
+    if seg_id[0].item() == env.seg_names.index("walk_yz"):
+        assert all(var[i].item() == 0 for i in wr), "yz 段 wrist×4 应恒为常数（源数据特性）"
+        print(f"  [OK] 29 列与查表帧一致，非 wrist std∈[{var_dyn.min():.3f},{var_dyn.max():.3f}]"
+              f"（wrist×4 常数 [源数据特性]）")
+    else:
+        print(f"  [OK] 全身 29 列与查表帧一致，std∈[{var.min():.3f},{var.max():.3f}]")
 
     print("=== 3. 站立回默认 ===")
     env.commands[:, :] = 0  # 站立
@@ -212,8 +223,8 @@ def main():
             diffs.append((cur - prev).abs().max().item())
         prev = cur
     dmax = max(diffs)
-    # 判据：跳变不超过数据源原生相邻帧差的 p99.9（GMR 右肘 yaw 原生抖动可达 0.36rad）
-    q = env.mocap_q[:, env.seg_names.index("walk_norm"), :].numpy()
+    # 判据：跳变不超过数据源原生相邻帧差的 p99.9（exp1.6 路由后行走查 walk_yz 段）
+    q = env.mocap_q[:, env.seg_names.index("walk_yz"), :].numpy()
     dq = np.abs(np.diff(q[:, env.upper_dof_indices.numpy()], axis=0))
     native_p999 = float(np.percentile(dq, 99.9))
     assert dmax <= max(0.05, native_p999), f"跳变 {dmax:.4f} 超数据原生 p99.9 {native_p999:.4f}"
