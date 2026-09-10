@@ -1265,3 +1265,29 @@ exp1.6 回放（isaac_diag.csv，10s×4 段速度阶梯）量化证据——机�
 **云端任务**（2026-09-09）：commit 52a8eba；账号[4] limxmtrzhd234eie6t（[3] 额度耗尽标记，新项目 PRO_20260909_022——跨账号项目不共享，[4] 下看不到 PRO_20260909_002）；**TASK_20260909_182**（trainType=2 恢复任务，用户手动创建；我误建的 181 是 trainType=1 已删——教训：resume 训练必须 trainType=2 + checkPointFilePath 挂载，startScript 带 --resume），4090D（ESKU000001/SKUSL000002，¥5.4/时）+ 镜像 BJX00000001/V000124（isaac-gym-v19）；`gm-run X1_29_amp/humanoid/scripts/train.py --resume --task=x1_dh_stand --run_name=exp1_7_gait --headless --seed=5 --ckpt_path=X1_29_amp/model_12000.pt --disc_fresh --max_iterations=6000`（12000→18000；OSS 挂载 model_12000 → X1_29_amp/model_12000.pt，与 --ckpt_path 精确重合；--ckpt_path 分支绕过 --resume 的 logs 扫描，task_registry L158-172 已验证）。17:35:42 启动。监控：日志 >1h 才出属正常；首验 it500 feet_air_time ≥0.05、tracking 不倒退、healthy 门控正常。
 
 **182 失败与重跑（2026-09-09）**：182 于 17:42 终止，日志 `python: can't open file 'X1_29_amp/humanoid/scripts/train.py'`——根因是手动创建时 **mainCodeUri 为空**，SDK 无代码入口定位导致 clone 不落位（对照：181 曾填 mainCodeUri，代码配置正确）。处置：① `task edit` 按完整合并规范补 `mainCodeUri=X1_29_amp/humanoid/scripts/train.py` + `hparamsPath`（注意 edit 返回 `changed:false` 是误报，以 info 复核为准）；② 状态 6 终止任务不可直接 run → `task copy` 复制为 **TASK_20260909_186**（trainType=2/4090D/ckpt 挂载/mainCodeUri 全部继承验证通过）→ 17:54:03 启动运行中。教训：恢复任务三要素 = trainType=2 + checkPoint 挂载 + **mainCodeUri 必填**（空则 clone 不落位，报 File not found）。
+
+### 6. 结果与回放验收（2026-09-10，TASK_20260909_190：186 GitHub clone 网络失败后重试成功）
+
+**任务曲折**：186 于 17:59 同样终止——argo 日志实锤 `fatal: unable to access '...github.com/...': Empty reply from server`（平台节点出口网络间歇故障，非配置问题；本机→GitHub 正常）。copy 重试为 **190**，17:59 后启动成功，22:28 完成（5，iter 12000→17999）。
+
+**训练曲线**（尾段 vs exp1.6）：reward 82.5 / episode 1981（90.6/2076 略降）；tracking 0.31~0.35（0.330 持平）；feet_air_time 0.0019~0.0022（仍低，抬脚不足延续）；AMP D 仍钉死（score -0.978/0.977、disc loss 0.0061、style 0.049、healthy 0.49）。
+
+**回放三件套**：`czy/data/exp1.7/{model_17999.pt, play_output.mp4, isaac_diag.csv}`（本地渲染回放）。工程：egg-link 又落回旧 checkout（`/home/robot/F1_train/yanni/`）→ 改用 `PYTHONPATH=/home/robot/czy/X1_29_amp` 前缀绕过（优先级高于 site-packages，不动全局）；沙箱拦 `/dev/nvidia-uvm` → 回放需提权沙箱外运行。
+
+**步态判据对照（§17.3，同口径）**：
+
+| 判据 | exp1.6 | exp1.7 | 目标 | 判定 |
+| --- | --- | --- | --- | --- |
+| 0.4 段 corr(左右髋) | +0.35 | **-0.65** | <0 | ✅ **反相交替达成** |
+| 0.6 段 corr | +0.51 | +0.52 | <0 | ❌ 仍同相 |
+| 0.4 段 Δyaw | 141° | **51°** | <45° | 接近达标 |
+| 0.6 段 Δyaw | -220° | **-26°** | — | ✅ 大幅改善 |
+| 0.6 段实速 | 0.318 | **0.451** m/s | — | ✅ +42% |
+| 0.4 段实速 | 0.265 | 0.144 m/s | — | ❌ 反降 |
+| 停止段滑行 | 0.087 | **0.038** m/s | — | ✅ 减半 |
+| 抬脚高度>3cm 事件 | 0 | 0 | ≥3 次 | ❌ 脚仍贴地 |
+| 行走段 cycle_time | 4.78 固定 | **0.70~3.10 自适应** | — | ✅ 机制兑现（mean 2.74 ≈ yz@0.4 理论 3.09 与 yz@0.6 2.39 均值） |
+
+**结论：半程胜利**——0.4 m/s（yz 路由、周期 3.09s 未触 clamp）交替步态形态质变：corr 反转、右髋 std 翻倍、偏航大减、停止滑行减半；自适应步频机制被数据精确验证（cycle_time 实测=理论值）。遗留：① 0.6 m/s clamp 0.5 触发（2.39s 下限）仍同相+贴地——步频缩放有下限，跟不上的根因转为**抬脚高度不足**（feet_air_time 训练全程 0.002、回放零抬脚事件，摆腿在踝/膝完成而髋抬不够）；② 0.4 段实速反降——交替步态以降速为代价（步幅真实化后不再滑行虚增速度）；③ AMP 三轮未复活（归因独立，exp1.8 分离面定位不变）。
+
+**exp1.8 候选**（未批准）：① 抬脚专项：feet_air_time 判据收紧（air_time 归一化为速度函数）或 swing_delta 增大强制摆幅；② 0.4 段降速补偿：foot_slip 已 -0.25 封顶不再动，观察 low_speed 项；③ AMP 分离面定位（原计划）；④ 本地环境固化：PYTHONPATH 方案写入 skill。
