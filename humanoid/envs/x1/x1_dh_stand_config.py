@@ -414,6 +414,11 @@ class X1DHStandCfg(LeggedRobotCfg):
             feet_contact_number = 2.0
             # gait
             feet_air_time = 1.5   # exp1.7: 1.2→1.5 加压抬腿（exp1.6 全程 0.0015，腿抬不起来是劈叉滑行的直接表现）
+            # ---- exp1.8: 髋交替步态双锚（§18，死区/反向激励修复）----
+            swing_air = 1.0       # 新增：摆动相离地逐步奖励——相位说该摆的脚真实离地即得分（无落地事件、无死区），
+                                  # 直接教"相位-抬脚"耦合；站立 phase=0 落双支撑天然 0 分
+            hip_ref = 1.0         # 新增：左右髋 pitch 对查表 ref 专项跟踪——交替波形 2 维直锚，
+                                  # 不受 ref_joint_pos 29 维范数稀释（exp1.7 全身跟踪仅 0.18）
             foot_slip = -0.25     # exp1.7: -0.1→-0.25 加压（滑行=脚在地面拖，触地脚水平速度惩罚翻倍以上；再升有滑步硬惩罚风险，见 §17 止损）
             feet_distance = 0.2   # exp0.3: 0.3→0.2 回退（exp0.2 证实带来 vx 过冲副作用，收益不明显）
             knee_distance = 0.2

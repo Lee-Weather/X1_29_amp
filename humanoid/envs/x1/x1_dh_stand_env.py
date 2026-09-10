@@ -995,15 +995,32 @@ class X1DHStandEnv(LeggedRobot):
         limited to a maximum value for reward calculation.
         """
         contact = self.contact_forces[:, self.feet_indices, 2] > 5.
-        stance_mask = self._get_stance_mask().clone()
-        stance_mask[torch.norm(self.commands[:, :3], dim=1) < 0.05] = 1
-        self.contact_filt = torch.logical_or(torch.logical_or(contact, stance_mask), self.last_contacts)
+        # exp1.8: contact_filt 剥离 stance_mask——相位期望不应伪造"触地"事实：
+        # 不跟拍的策略真实抬脚时（相位却说该支撑）air_time 被强制清零 → 永不触发落地
+        # 奖励 → 抬脚零梯度死区（exp1.7 全程 0.0019）。相位对齐职责移交 swing_air/
+        # feet_contact_number（那里有一对一耦合）。站立时 phase=0 双支撑、脚贴地，
+        # air_time 天然不累积，无需 stand 分支。
+        self.contact_filt = torch.logical_or(contact, self.last_contacts)
         self.last_contacts = contact
         first_contact = (self.feet_air_time > 0.) * self.contact_filt
         self.feet_air_time += self.dt
         air_time = self.feet_air_time.clamp(0, 0.5) * first_contact
         self.feet_air_time *= ~self.contact_filt
         return air_time.sum(dim=1)
+
+    def _reward_swing_air(self):
+        """exp1.8: 摆动相离地奖励——相位说该摆动的脚，真实离地即得分（每步连续）。
+
+        机理：直接教"相位-抬脚"一对一耦合（左摆动相抬左脚、右摆动相抬右脚，
+        半周期一交换）——交替步态的最小可学单元。无落地事件依赖（air_time 的
+        结构性死区来源），无 stance_mask 清零路径。
+        副作用防护：一直抬腿→单支撑必倒（物理）；双支撑期（|sin|<0.1）双方
+        stance_mask=1 不得分；feet_contact_number（错配 -1.0）反向钳制。
+        站立 env：phase 恒 0 → sin=0 → 双支撑 → 天然 0 分。
+        """
+        contact = self.contact_forces[:, self.feet_indices, 2] > 5.
+        swing = 1. - self._get_stance_mask()          # (N,2) 1=期望摆动
+        return (swing * (~contact).float()).sum(dim=1)
 
     def _reward_feet_contact_number(self):
         """
@@ -1013,8 +1030,27 @@ class X1DHStandEnv(LeggedRobot):
         contact = self.contact_forces[:, self.feet_indices, 2] > 5.
         stance_mask = self._get_stance_mask().clone()
         stance_mask[torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold] = 1
-        reward = torch.where(contact == stance_mask, 1, -0.3)
+        # exp1.8: 错配罚分 -0.3→-1.0——旧值下贴地策略单支撑期错配一只仍净赚
+        # （(1-0.3)/2=+0.35/步，exp1.7 实测 1.23/ep 为零对齐基线 3.5 倍），激励反转：
+        # 贴地净收益归零，真实交替全匹配 2/步
+        reward = torch.where(contact == stance_mask, 1, -1.0)
         return torch.mean(reward, dim=1)
+
+    def _reward_hip_ref(self):
+        """exp1.8: 左右髋 pitch 对查表 ref 的专项跟踪——交替波形 2 维直锚。
+
+        机理：ref 查表轨迹（yz demo）本身含大幅交替摆髋，单锚这两维等于直接
+        注入交替波形；ref_joint_pos 是 29 维全身范数，交替模式（2 维）被稀释
+        （exp1.7 全身跟踪仅 0.18~0.20）。公式沿用 ref_joint_pos 形态
+        （exp(-2d) + 远场线性项）。站立锁 1.0 与其一致。
+        """
+        idx = self.leg_dof_indices[[0, 6]]            # 左/右 hip_pitch
+        diff = self.dof_pos[:, idx] - self.ref_dof_pos[:, idx]
+        d = torch.norm(diff, dim=1)
+        r = torch.exp(-2 * d) - 0.2 * d.clamp(0, 0.5)
+        stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
+        r[stand_command] = 1.0
+        return r
 
     def _reward_orientation(self):
         """
