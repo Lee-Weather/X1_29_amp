@@ -1323,3 +1323,7 @@ exp1.6 回放（isaac_diag.csv，10s×4 段速度阶梯）量化证据——机�
 ### 4. 判据与止损
 
 it500：feet_air_time ≥0.05（死区解除应立即起量）、swing_air ≥0.5、episode ≥1000（<800 → swing_air 1.0→0.5）。it2000：髋摆频≈1/cycle_eff、左右髋 p2p 对称比 <2:1（无增长 → hip_ref→2.0）。终验：左右髋 corr<-0.3 且摆幅对称、每脚摆动 ≥3 次/段、0.4 段实速 ≥0.25、Δyaw<45°。风险：hip_ref 过强跛行摆髋（膝 p2p<0.3 → 降 0.5）；swing_air×contact_number 震荡（→contact_number 2.4→1.5）。
+
+### 5. 云端任务（2026-09-10）
+
+账号[5] limxmtrzi31s26t5t4（[4] 耗尽标记；池剩 [6]~[10] 五个）；commit 205ed7c；新项目 PRO_20260910_018；**TASK_20260910_118**（trainType=2，4090D/V000124）。曲折：首启报"算力资源无法挂载个人存储"→ 4090 不支持 personalDataPath，edit 置空后 13:41:48 启动成功（教训：CLI 建任务模板里的 personalDataPath 在 4090 上必删）。checkpoint 走 git 内置 model_12000.pt + --ckpt_path 直载（跨账号 OSS 对象不可见，git 路线免疫）。`gm-run ... --resume --ckpt_path=X1_29_amp/model_12000.pt --disc_fresh --max_iterations=8000`（12000→20000）。
