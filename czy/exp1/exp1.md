@@ -1398,4 +1398,4 @@ it500：swing_air≥0.5、episode≥1000；it2000：交替信号主频≥0.8Hz�
 
 ### 6. 云端任务（2026-09-11）
 
-账号[6] limxmtrzino0kfpc9m（[5] 耗尽标记；池剩 [7]~[10] 四个）；底模 **exp1.3 model_12000 重新起步**（12000→20000，--disc_fresh）——exp1.8 19999 弃用（右臂学自错误符号参考+tap 固化），归因链 exp1.4~1.9 同底模单变量可比；max_iterations 8000。
+账号[6] limxmtrzino0kfpc9m（[5] 耗尽标记；池剩 [7]~[10] 四个）；commit 88ada5c；新项目 PRO_20260911_014；**TASK_20260911_086**（trainType=2，4090D/V000124/goodsId ESKU000001，personalDataPath 空）。底模 **exp1.3 model_12000 重新起步**（12000→20000，--disc_fresh）——exp1.8 19999 弃用（右臂学自错误符号参考+tap 固化），归因链 exp1.4~1.9 同底模单变量可比；max_iterations 8000。`gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand --headless --resume --ckpt_path=X1_29_amp/model_12000.pt --disc_fresh --max_iterations=8000`。
