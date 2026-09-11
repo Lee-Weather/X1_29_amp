@@ -1434,3 +1434,13 @@ it500：swing_air≥0.5、episode≥1000；it2000：交替信号主频≥0.8Hz�
 **配置**：代码零改动；底模 exp1.9 model_19999（OSS checkPointFilePath 挂载，同账号可见——跨任务恢复首次走 OSS 而非 git 内置）；**不加 --disc_fresh**（纯续训语义：连判别器一起加载，保住 AMP style 0.163 起量——与 exp1.8/1.9 的 fresh 约定不同，因本轮不弃用旧策略）；19999→23999（--max_iterations=4000 增量）；**TASK_20260911_179**（PRO_20260911_014，账号[6]）。
 
 **判据**：tracking_lin_vel 0.195→≥0.35（0.4/0.6 段实速回落至指令 ±30% 内）且 foot_height ≥1.0、单支撑占比 ≥40% 不倒退 = 观察轮成功，exp1.11 再收尾；若 tracking 无起色或步态结构倒退 → exp1.11 走 foot_place 落点锚（A 方案）。
+
+## 实验 exp1.11：10000 轮长跑——exp1.9 纯续训（2026-09-11，用户指令"在 1.9 基础上续训 10000 轮"）
+
+**动机**：用户判断 exp1.9 步态结构刚成型，与其 4000 轮短观察，不如直接拉 10000 轮长跑让结构充分收敛——与 exp1.10 观察轮并行跑（两任务两账号，用户明知且有意，互不占用额度）。
+
+**配置**：代码零改动；底模 **exp1.9 model_19999**（19999→29999，--max_iterations=10000 增量）；**不加 --disc_fresh**（纯续训语义同 exp1.10，保 AMP style 0.163）；**git 内置 checkpoint 路线**（跨账号 OSS 不可见——同 exp1.8 model_12000 先例）：`model_19999.pt` cp 到仓库根，`git add -f` 突破 .gitignore 拦截（报错提示"使用 -f 参数如果您确实要添加它们"），commit **44ef417**；**TASK_20260911_190**（PRO_20260911_026，账号[7] limxmtrzj7kpgso56u，新项目——跨账号项目不共享）；4090D（ESKU000001/SKUSL000002，¥5.4/时）、镜像 BJX00000001/V000124、personalDataPath 空（4090 不支持）、trainType=2、resumeFrom* 空（checkpoint 随 git clone 到位，非 OSS 挂载）。startScript：`gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand --headless --resume --ckpt_path=X1_29_amp/model_19999.pt --max_iterations=10000`。dry-run exit 10 通过，17:48 创建并启动（taskStatus=2 排队/启动中）。
+
+**工程备注**：`.gitignore` 有 `*.pt` 类规则，model_19999.pt 进 git 必须 `-f`（exp1.8 的 model_12000 当年能进库说明此路线可行）；[7]~[10] 四账号在池，[6] 保留给 exp1.10 跑完。
+
+**判据**（同 exp1.10 观察）：tracking_lin_vel 0.195→≥0.35、0.4/0.6 段实速回落至指令 ±30% 内、foot_height ≥1.0、单支撑 ≥40%、交替 corr 稳定 <0、AMP style 不倒退（≥0.16）；若长跑后 tracking 仍无起色 → 速度失控根因（参考几何步幅固定 0.62m）确认不可自愈，下一轮上 foot_place 落点锚。
