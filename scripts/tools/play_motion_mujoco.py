@@ -167,11 +167,10 @@ def build_qpos(model, root_pos, root_rot, dof_pos, dof_names, flip=True):
     return qpos
 
 
-def record_video(model, data, qpos, fps, out_path):
+def record_video(model, data, qpos, fps, out_path, width=640, height=360):
     """Stream frames to PNG temp dir, then ffmpeg-combine to mp4 (no imageio-ffmpeg)."""
     import imageio.v2 as imageio
 
-    width, height = 1280, 720
     model.vis.global_.offwidth = width
     model.vis.global_.offheight = height
     rend = mujoco.Renderer(model, height=height, width=width)
@@ -211,6 +210,8 @@ def main():
     ap.add_argument("motion", help=".pkl file or bare name to search")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--record", metavar="MP4", help="offscreen render to mp4")
+    ap.add_argument("--no-flip", action="store_true",
+                    help="data already FLIP-corrected (e.g. extracted from ref_lib.pt)")
     args = ap.parse_args()
 
     model = mujoco.MjModel.from_xml_path(args.model)
@@ -222,7 +223,7 @@ def main():
     path = motion[0]
 
     fps, root_pos, root_rot, dof_pos, dof_names, fmt, m = load_motion(path)
-    qpos = build_qpos(model, root_pos, root_rot, dof_pos, dof_names, flip=True)
+    qpos = build_qpos(model, root_pos, root_rot, dof_pos, dof_names, flip=not args.no_flip)
     verify_against_stored(model, data, m, qpos, fmt)
 
     print(f"\nmotion : {os.path.relpath(path, ROOT)}  [{fmt}]")

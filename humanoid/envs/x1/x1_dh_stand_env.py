@@ -1052,6 +1052,27 @@ class X1DHStandEnv(LeggedRobot):
         r[stand_command] = 1.0
         return r
 
+    def _reward_foot_height(self):
+        """exp1.9: 摆动相足高对相位钟形目标的连续跟踪——攻 tap 试探（§19）。
+
+        机理：swing_air（二值"离地即赚"）下策略学到 1~2cm 点地试探（exp1.8 终值
+        0.219/2.0≈11%）。本项用相位生成钟形目标 h_target = A·|sin(2πφ)|（左脚在
+        sin<0 半周期摆动 → relu(-sin)，右对称），逼"完整摆动"（0→A→0）。
+        - 直接世界坐标计算（rigid_state z − ankle 距离），无 feet_height 状态依赖
+          （旧 feet_clearance 的累计量只在被调用时更新，跨界引用有时序陷阱）
+        - 双支撑窗 |sin|<0.1 目标≈0，触地即满足；站立锁 1.0 与 hip_ref 一致
+        - 峰值 A=cfg.rewards.foot_height_target（0.08）；容差 0.04（A/2）
+        """
+        sin_pos = torch.sin(2 * torch.pi * self._get_phase())              # (N,)
+        h = self.rigid_state[:, self.feet_indices, 2] \
+            - self.cfg.rewards.feet_to_ankle_distance                       # 离地高度 (N,2)
+        A = self.cfg.rewards.foot_height_target
+        tgt = torch.stack([torch.relu(-sin_pos), torch.relu(sin_pos)], dim=1) * A
+        r = torch.exp(-torch.abs(h - tgt) / (0.5 * A))
+        stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
+        r[stand_command] = 1.0
+        return r.sum(dim=1)
+
     def _reward_orientation(self):
         """
         Calculates the reward for maintaining a flat base orientation. It penalizes deviation 

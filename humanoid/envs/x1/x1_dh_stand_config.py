@@ -375,8 +375,10 @@ class X1DHStandCfg(LeggedRobotCfg):
         # 12 元素按腿部顺序（env 的 leg_dof_names 解析索引；上半身不参与步态摆动，保持默认位姿）
         # 索引 10 = right_ankle_pitch：29DOF PM 轴 (0 0 -1) 与左踝世界轴反平行，摆幅反号（exp0 验证）
         final_swing_joint_delta_pos = [0.25, 0.05, -0.11, 0.35, -0.16, 0.0, -0.25, -0.05, 0.11, 0.35, 0.16, 0.0]
-        target_feet_height = 0.03 
-        target_feet_height_max = 0.06
+        target_feet_height = 0.03
+        target_feet_height_max = 0.10  # exp1.9: 0.06→0.10 扩窗——foot_height 目标峰 0.08，
+                                       # 旧上限 0.06 下"抬到位反而丢 feet_clearance 分"自相矛盾
+        foot_height_target = 0.08      # exp1.9: 摆动相足高钟形目标峰值（A·|sin|，A 即此值）
         feet_to_ankle_distance = 0.041
         cycle_time = 0.7
 
@@ -419,6 +421,11 @@ class X1DHStandCfg(LeggedRobotCfg):
                                   # 直接教"相位-抬脚"耦合；站立 phase=0 落双支撑天然 0 分
             hip_ref = 1.0         # 新增：左右髋 pitch 对查表 ref 专项跟踪——交替波形 2 维直锚，
                                   # 不受 ref_joint_pos 29 维范数稀释（exp1.7 全身跟踪仅 0.18）
+            # ---- exp1.9: yz 参考修复后的幅度激励（§19）----
+            foot_height = 1.0     # 新增：摆动相足高对相位钟形目标（A·|sin|，A=foot_height_target=0.08）
+                                  # 的连续跟踪 exp(-|h-tgt|/0.04)——攻 tap 试探（exp1.8 swing_air 二值
+                                  # 奖励下"离地 1~2cm 即赚"，终值 0.219/2.0≈11%）；双支撑窗目标
+                                  # 天然≈0，站立锁 1.0 不误伤
             foot_slip = -0.25     # exp1.7: -0.1→-0.25 加压（滑行=脚在地面拖，触地脚水平速度惩罚翻倍以上；再升有滑步硬惩罚风险，见 §17 止损）
             feet_distance = 0.2   # exp0.3: 0.3→0.2 回退（exp0.2 证实带来 vx 过冲副作用，收益不明显）
             knee_distance = 0.2
