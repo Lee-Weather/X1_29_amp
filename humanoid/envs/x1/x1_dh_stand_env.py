@@ -239,7 +239,22 @@ class X1DHStandEnv(LeggedRobot):
         # self.gait_time = |__gait1__|__gait2__|__gait3__|
         # self.gait_time triger resample gait command
         self.gait_time[envs] = torch.cumsum(scaled_tensor,dim=1).int()
-     
+
+    def check_termination(self):
+        """exp1.12: 收紧 termination——roll/pitch 0.8rad + h<0.45 双条件（§20）。
+
+        base 判据 1.5rad=86° 过松：趴地扑腾段（pitch 30~75°、h~0.1m）大量进入
+        训练分布污染 PPO/AMP 样本（exp1.11 修正：训练 episode ~10.9s 即摔终止）。
+        提前止损让学习集中在"不摔"分布上；非脚触地力>1N 判据保留（趴地兜底）。
+        """
+        self.reset_buf = torch.any(
+            torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
+        self.time_out_buf = self.episode_length_buf > self.max_episode_length
+        self.reset_buf |= self.time_out_buf
+        self.reset_buf |= torch.abs(self.base_euler_xyz[:, 0]) > self.cfg.termination.roll_pitch_cutoff
+        self.reset_buf |= torch.abs(self.base_euler_xyz[:, 1]) > self.cfg.termination.roll_pitch_cutoff
+        self.reset_buf |= self.root_states[:, 2] < self.cfg.termination.base_height_cutoff
+
     def _resample_commands(self):
         """ Randommly select commands of some environments
 
@@ -1069,6 +1084,39 @@ class X1DHStandEnv(LeggedRobot):
         A = self.cfg.rewards.foot_height_target
         tgt = torch.stack([torch.relu(-sin_pos), torch.relu(sin_pos)], dim=1) * A
         r = torch.exp(-torch.abs(h - tgt) / (0.5 * A))
+        stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
+        r[stand_command] = 1.0
+        return r.sum(dim=1)
+
+    def _reward_foot_place(self):
+        """exp1.12: 摆动腿落点锚——步幅按 v_cmd×T/2 缩放（§20）。
+
+        机理：cycle_eff 只缩节奏（T），参考几何步幅 0.62m 固定 → 稳态速度饱和
+        ~0.5（exp1.11 速度扫描：0.3~0.8 档全聚 0.46~0.55）。本项补第二自由度：
+        每步目标位移 step_len = v_cmd·T/2，摆动相内前脚 x（根系投影）连续跟踪
+        root_x + 0.75·step_len——几何自洽（v = 2·step_len/T 恰为指令速度），
+        且落点进支撑多边形兼是防摔稳定器（第一瓶颈 8~10s/摔）。
+        - 根系投影：世界系 (foot-root) 经 quat_rotate_inverse 取 x，免疫 yaw
+          漂移（±17°/s）对步幅语义的污染
+        - 0.75 = 触地几何 0.5 + 支撑相余量 0.25（快测校准常数）
+        - 方向约定同 foot_height：sin<0 左摆、sin>0 右摆；双支撑 |sin|<0.1
+          不激活；站立锁 1.0
+        """
+        sin_pos = torch.sin(2 * torch.pi * self._get_phase())              # (N,)
+        v_cmd = self.commands[:, 0].clamp(min=0.)                           # (N,)
+        T = self._current_cycle_time()                                     # (N,) exp1.7 自适应
+        step_len = v_cmd * T / 2
+        foot = self.rigid_state[:, self.feet_indices, 0:3]                 # (N,2,3) 世界系
+        root_p = self.root_states[:, 0:3]                                  # (N,3)
+        # 左右脚分别转根系（(N,4)×(N,3) 标准用法——TorchScript 不接受 (N,2,4)×(N,2,3)）
+        fwd = torch.stack([
+            quat_rotate_inverse(self.base_quat, foot[:, 0, :] - root_p)[:, 0],
+            quat_rotate_inverse(self.base_quat, foot[:, 1, :] - root_p)[:, 0],
+        ], dim=1)                                                          # (N,2) 根系前向偏移
+        tgt = 0.75 * step_len.unsqueeze(1)                                  # (N,1) 相对根
+        r = torch.exp(-torch.abs(fwd - tgt) / self.cfg.rewards.foot_place_sigma)
+        swing = torch.stack([sin_pos < -0.1, sin_pos > 0.1], dim=1)         # 左摆/右摆
+        r = torch.where(swing, r, torch.ones_like(r))                       # 非摆动相不罚
         stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
         r[stand_command] = 1.0
         return r.sum(dim=1)

@@ -1524,3 +1524,31 @@ it500：swing_air≥0.5、episode≥1000；it2000：交替信号主频≥0.8Hz�
 **⑤ 训练-回放一致性**：训练 log Mean episode length 2170（物理步 @200Hz）≈10.85s，远低于 24s timeout——**训练时大部分 episode 本就是摔倒终止**，与标准回放 8~10s/摔吻合（此前误按控制步算成 43s，高估了训练稳定性）。速度扫描 2.5s/摔 更差：连续行进命令无 stand 休息（训练 gait 轮换有）+ 低速命令分布罕见。
 
 **⑥ 修正后的问题排序与 exp1.12 方向**：第一瓶颈=**平衡稳定性**（每 8~10s 前扑一次，趴地 h~0.1m），速度饱和 ~0.5 是次生问题（低速下不去+高速够不到）。foot_place 落点锚仍是对的第一步——落点在支撑多边形内既是速度可控也是防摔稳定器；备选组合：termination 收紧（1.5rad=86° 过松，可试 0.6~0.8rad 让训练更早干预）+ 生存/姿态类权重复核（orientation 0.39 reward 均值 vs base_height 0.086 偏低）。
+
+## 实验 exp1.12：foot_place 落点锚 + termination 收紧——主攻平衡稳定，兼治速度饱和（2026-09-12，方案已快测）
+
+**动机**：exp1.11 修正后问题重排——第一瓶颈为平衡稳定性（标准回放 8~10s/摔，训练 episode 10.9s 即摔终止），速度饱和 ~0.5 为次生（0.3~0.8 档稳态全聚 0.46~0.55）。机理：cycle_eff 只缩节奏（T），参考几何步幅 0.62m 固定 → 速度失控；且 termination 1.5rad=86° 过松，趴地扑腾段污染 PPO/AMP 样本。
+
+**修改两项**（x1 env override，不动 base 类）：
+
+1. **`_reward_foot_place`（核心）**：摆动相前脚 x（世界系 (foot-root) 经 quat_rotate_inverse 转根系，免疫 yaw 漂移）连续跟踪 `root + 0.75×step_len`，step_len = v_cmd×T/2（T 取 exp1.7 自适应 `_current_cycle_time`）——几何自洽 v=2·step_len/T 恰为指令速度，节奏+步幅双自由度；0.75=触地几何 0.5+支撑相余量 0.25；方向约定同 foot_height（sin<0 左摆）；双支撑 |sin|<0.1 不罚；站立锁 1.0。config：`foot_place_sigma=0.15`、`scales.foot_place=1.0`。
+2. **`check_termination` override**：roll/pitch 1.5→**0.8rad（46°）** + 新增 **h<0.45m** 双条件（config 新增 `class termination`）；非脚触地力>1N 保留兜底。提前止损把学习集中在"不摔"分布。
+
+**不动项**：foot_height 保留（1.36 已固化）、AMP/ref_lib/相位自适应/其余权重零改动（归因控制）；lin_vel_x [-0.4,1.2] 不扩（0.8 档已在分布内）。
+
+**快测**（model_29998 续训 300 iter 本地 1024 env）：跑通无报错（修一处 TorchScript 兼容——quat_rotate_inverse 不接受 (N,2,4)×(N,2,3)，改左右脚分别调用）；foot_place 生效爬升 0.013→0.264；termination 生效（episode 24.9 步起步，同 exp1.11 云端 43 步秒杀期，恢复期预估拉长至 ~2000 轮）；秒杀期 foot_place==foot_height 恒等 = 双支撑窗双满分（非 bug）；AMP healthy 0 为起步期正常。数学预检：0.4 档 tgt=0.29m（|Δ|→r 0.28~1.0 合理）、0.1 档 tgt=0.072 拉小步幅、0.8 档 tgt=0.525 拉大步幅，方向正确。
+
+**底模与语义**：exp1.11 model_29998（速度跟踪能力全集：0.4 档 1.14x + 结构固化）；**不加 --disc_fresh**（保 D 延续 style 0.153）；8000 轮 29998→37997；[8] 账号 limxmtrzjtdqodlxny（[7] used 44/50 剩 6 元不足以 29 元任务，标记耗尽）；git 内置 checkpoint 路线（model_29998.pt `git add -f`，同 44ef417 先例）。
+
+**判据（预注册）**：
+
+| 类 | 判据 | exp1.11 底模 | exp1.12 目标 |
+| --- | --- | --- | --- |
+| 防摔（主） | 标准回放摔倒间隔 | 8.0s/摔 | **≥20s/摔（40s ≤2 次）** |
+| | 训练 episode length | 2170 步≈10.9s | **≥3200 步（16s）** |
+| 速度（剔摔稳态） | 0.4 / 0.6 档 | 1.14x / 0.83x | 0.36~0.52 / 0.54~0.78 |
+| | 0.1 / 0.8 档 | 2.37x / 0.59x | ≤0.25 / ≥0.55 |
+| 结构不倒退 | 抬脚≥2/段、单支撑≥40%、锁定≥0.5 | ✓ | ✓ |
+| | AMP style | 0.153 | ≥0.10（步幅重塑允许回落） |
+
+**止损**：it3000 episode length <1500 → termination 收紧过猛，回退 0.8→1.2rad 只留 foot_place；style <0.05 → foot_place 权重减半 0.5。监控节奏：it500 首验（episode 站上 600 步）、it2000 恢复确认、中段防过山车。

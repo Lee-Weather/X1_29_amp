@@ -58,6 +58,13 @@ class X1DHStandCfg(LeggedRobotCfg):
         vel_limit = 1.0
         torque_limit = 0.85
 
+    class termination:
+        # exp1.12: 收紧 termination（§20，x1 env override check_termination 读取）——
+        # base 判据 1.5rad=86° 过松，趴地扑腾段（pitch 30~75°、h~0.1m）大量进入训练分布，
+        # 污染 PPO/AMP 样本（exp1.11 修正：训练 episode ~10.9s 即摔终止，timeout 24s 远未到）
+        roll_pitch_cutoff = 0.8   # rad（46°）：exp1.11 摔倒 pitch 峰值 44~75°，拦住一半以上
+        base_height_cutoff = 0.45 # m：站立基线 0.607，跌破即半摔（回放判据 h<0.455 同口径）
+
 
     class asset(LeggedRobotCfg.asset):
         # exp0：29DOF 全身 URDF（Isaac Gym dof 序：左腿0-5/腰6-8/左臂9-15/右臂16-22/右腿23-28，env 按名索引腿部）
@@ -380,6 +387,7 @@ class X1DHStandCfg(LeggedRobotCfg):
                                        # 旧上限 0.06 下"抬到位反而丢 feet_clearance 分"自相矛盾
         foot_height_target = 0.08      # exp1.9: 摆动相足高钟形目标峰值（A·|sin|，A 即此值）
         feet_to_ankle_distance = 0.041
+        foot_place_sigma = 0.15        # exp1.12: 落点锚容差——|foot_x_fwd - tgt| 的 exp 核尺度（§20 快测校准）
         cycle_time = 0.7
 
         # ---- exp1.7: 速度自适应步频（劈叉滑行根治，§17）----
@@ -426,6 +434,11 @@ class X1DHStandCfg(LeggedRobotCfg):
                                   # 的连续跟踪 exp(-|h-tgt|/0.04)——攻 tap 试探（exp1.8 swing_air 二值
                                   # 奖励下"离地 1~2cm 即赚"，终值 0.219/2.0≈11%）；双支撑窗目标
                                   # 天然≈0，站立锁 1.0 不误伤
+            # ---- exp1.12: 落点锚（§20）----
+            foot_place = 1.0      # 新增：摆动腿落点对目标 root_x + 0.75·v_cmd·T/2 的连续跟踪
+                                  # exp(-|Δ|/foot_place_sigma)——步幅按指令缩放（节奏+步幅双自由度），
+                                  # 治"稳态速度饱和 ~0.5"（cycle_eff 只缩节奏，参考几何步幅 0.62m 固定）；
+                                  # 落点进支撑多边形兼是防摔稳定器（exp1.11 修正：8~10s/摔为第一瓶颈）
             foot_slip = -0.25     # exp1.7: -0.1→-0.25 加压（滑行=脚在地面拖，触地脚水平速度惩罚翻倍以上；再升有滑步硬惩罚风险，见 §17 止损）
             feet_distance = 0.2   # exp0.3: 0.3→0.2 回退（exp0.2 证实带来 vx 过冲副作用，收益不明显）
             knee_distance = 0.2
