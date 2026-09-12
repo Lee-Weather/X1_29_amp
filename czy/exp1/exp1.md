@@ -1552,3 +1552,5 @@ it500：swing_air≥0.5、episode≥1000；it2000：交替信号主频≥0.8Hz�
 | | AMP style | 0.153 | ≥0.10（步幅重塑允许回落） |
 
 **止损**：it3000 episode length <1500 → termination 收紧过猛，回退 0.8→1.2rad 只留 foot_place；style <0.05 → foot_place 权重减半 0.5。监控节奏：it500 首验（episode 站上 600 步）、it2000 恢复确认、中段防过山车。
+
+**云端任务**（2026-09-12）：commit 4dca161；账号[8] limxmtrzjtdqodlxny（[7] used 44/50 标记耗尽——剩 6 元不足以 29 元任务）；新项目 PRO_20260912_032；**TASK_20260912_112**（trainType=2、4090D/V000124/ESKU000001、personalDataPath 空、git 内置 checkpoint——model_29998.pt 随 clone 到位，resumeFrom* 空）；startScript `gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand --headless --resume --ckpt_path=X1_29_amp/model_29998.pt --max_iterations=8000`（无 --disc_fresh）；dry-run exit 10 通过。待验收：标准回放+速度扫描双跑，判据表加摔倒行（事件数/reset 数/间隔），exp1.9/1.11/1.12 三轮对比。
