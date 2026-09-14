@@ -195,6 +195,18 @@ def play(args):
               f"joint_friction_rand={env_cfg.domain_rand.randomize_joint_friction}, "
               f"armature_rand={env_cfg.domain_rand.randomize_joint_armature})")
 
+    # §21h: 摩擦定标开关——PLAY_FRICTION=<值> 把机器人 shape 摩擦钉到该值。
+    # 复用 randomize_friction 通道：friction_range=[f,f] 使 256 个桶全为 f（环境创建时抽样，
+    # 非逐 reset）；restitution_range=[0,0] 保持与名义模式（默认 0.0）一致，只变摩擦一项。
+    # 放在 MATCH_TRAIN 还原之后 → 两种模式都可叠加。地面摩擦恒 0.6（cfg.terrain，两边相同）。
+    _play_friction = os.environ.get("PLAY_FRICTION")
+    if _play_friction is not None:
+        _f = float(_play_friction)
+        env_cfg.domain_rand.randomize_friction = True
+        env_cfg.domain_rand.friction_range = [_f, _f]
+        env_cfg.domain_rand.restitution_range = [0.0, 0.0]
+        print(f"[play] PLAY_FRICTION={_f}: 机器人 shape 摩擦钉值（restitution 钉 0，地面仍 0.6）")
+
     train_cfg.seed = 123145
     print("train_cfg.runner_class_name:", train_cfg.runner_class_name)
 
