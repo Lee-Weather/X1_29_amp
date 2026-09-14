@@ -1796,3 +1796,41 @@ play.py 增三行（commit 见 git log）：`lag_timesteps_range=[22,22]`（acti
 2. **速度单调向好**：0.4 档 1.72→1.60→1.42x、0.6 档 1.36→1.23→1.16x、行走段 1.51→1.38→1.27x——exp1.12 最好，再次支持不回退。
 3. **关键新事实：速度指标强依赖评测模式**——同一 exp1.12 在训练域是 0.86x（欠速）、在名义模式是 1.27x（超速）。真机是**单次动力学抽取**，更接近名义模式 → **"超速"在部署相关口径下依然成立**（此前 (c) 表里"不成立超速"的裁定需限定为"训练域口径下不成立"）。→ **exp1.13 的速度类工作不能完全撤回**：目标应改为"名义模式 0.4/0.6 档收敛到 1.0x 附近"，且先做刚体摩擦对齐实验判断该差距是否只是摩擦口径差。
 4. pitch 均值随世代上升（0.139→0.174→0.208）：exp1.12 步幅更大/更前倾，稳定性余量反而更好（roll 更小），暂不视为退化。
+
+### 9. §21g 摩擦与全部 train/play 差异清单（2026-09-14，回答"刚体摩擦差别有哪些 / 除此外还有区别吗"）
+
+**（a）刚体摩擦：实测值（探针 `/tmp/probe_props.py`，创建 env 后直接读 PhysX `dof_props`/`RigidShapeProperties`）**
+
+| 项 | 训练 | play 名义模式（实测） | 判定 |
+| --- | --- | --- | --- |
+| 机器人 shape friction | 每 env 抽一个值 ∈ **[0.2,1.3]**（256 桶，同 env 全 shape 同值） | **1.0**（URDF 无 friction 字段 → Isaac Gym 默认） | **训练范围内偏高**（1.0 < 1.3，但比均值 0.75 高）——分布内单点，**非 OOD**（与 armature 越界性质不同） |
+| 机器人 shape restitution | U[0,0.4]（同桶） | **0.0** | 分布内偏低 |
+| 地面/地形 friction | **0.6**（trimesh 走 `tm_params`） | **0.6**（plane 走 `plane_params`） | **无差异**（三条创建路径都用 `cfg.terrain.static_friction`，[legged_robot.py L1013/1030/1047](file:///home/robot/czy/X1_29_amp/humanoid/envs/base/legged_robot.py#L1013-L1048)） |
+| 关节 friction（dof_props） | 0（URDF 无字段，×U[0.01,1.15] 仍 0） | 0（实测） | 无差异 |
+| 关节库仑/粘滞 | `randomize_coulomb_friction=True`（`_compute_torques` 内实现，范围 [0.1,0.9]/[0.05,0.1]） | **同样开启**（play 未关，探针确认） | 无差异 |
+| 接触摩擦组合方式 | PhysX 默认（仓库未显式设置 combine mode）；有效摩擦 = 脚(∈[0.2,1.3]) ⊗ 地面(0.6) | 脚(1.0) ⊗ 地面(0.6) | **训练=分布，play=单点且偏高** |
+
+**摩擦的方向性推论**：play 名义模式抓地更强（1.0 vs 均值 0.75）→ 同等关节推力下前进加速度更大 → 与名义模式观察到的超速（行走段 1.27~1.51x）方向一致；而 MATCH_TRAIN 那次 exp1.12 的 0.86x（欠速）**很可能是 env0 随机抽到的摩擦偏低所致**（4096 env 里只有 env0 被记录）。→ 建议做**摩擦定标扫描**（nominal 模式钉 0.3 / 0.75 / 1.0 / 1.3 各一次）来确定"速度 vs 摩擦"敏感度，否则 MATCH_TRAIN 与 nominal 的速度口径无法比较。
+
+**（b）除摩擦外的全部差异（✔=该模式存在该项覆盖）**
+
+| # | 项 | 训练 | MATCH_TRAIN=1 | 名义(nominal) | 方向 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 关节 armature | 逐关节随机（绝对赋值，踝 [0.003,0.04] 等） | 同训练（fixed 字典随 domain_rand 一起被还原，不生效） | 固定训练中心（实测髋pitch 0.16/髋roll 0.025/膝 0.25/踝 0.0215） | 修复后中性 |
+| 2 | 关节被动阻尼 | URDF 1.0×U[0.3,1.5] | 同训练 | 固定 0.9（实测） | 修复后中性 |
+| 3 | 质量/COM/连杆质量/gains/torque/motor_offset | 全部随机 | 同训练 | 关闭（值=训练中心 0/1.0） | 中性（良性） |
+| 4 | 动作延迟 lag | U[5,40] **ms**（物理步单位） | 同训练 | 固定 22ms | 次要 |
+| 5 | q/dq 观测延迟 | U[0,40] ms | 同训练 | 固定 20ms | 次要 |
+| 6 | dof_pos_vel lag / imu lag | 均关 | 同 | 同 | 无差异 |
+| 7 | obs 噪声 | on（level 1.5，逐帧） | **on**（noise 对象随 MATCH_TRAIN 还原） | **off** | 名义更"干净" |
+| 8 | 推力扰动 | on（每 4s、warmup 后 0.05~0.25s 脉冲、±0.2 m/s / ±0.2 rad/s） | **不触发** | **不触发** | 三种 play 都缺（`episode_length_s=1000` → `common_step_counter/update_step=0` → `push_duration[0]=0`） |
+| 9 | 地形 | trimesh 20×20，level 0~5（flat 0.3 / rough ±5~10mm 0.2 / slope ≤5.7° 0.4 / discrete 0.1） | 同训练 | **plane** | 名义更简单 |
+| 10 | 命令 | gait 段重采样：vx U[-0.4,1.2] + **vy U[-0.4,0.4] + wz U[-0.6,0.6]**；command curriculum 可升到 1.5 | FIX 阶梯 | FIX 阶梯 | play 只测直行（vy=wz≡0），覆盖更窄 |
+| 11 | 起步方式 | 每 episode 先 stand 段 3~5s 再切 walk | 1.5s 站立缓冲 | 同左 | 近似 |
+| 12 | episode_length_s | 24s（max 2400 步；含 stand→walk→stand 调度） | **1000s** | 1000s | play 无 timeout 复位、调度/推力边界永不触发 |
+| 13 | num_envs | 4096 | 10 | 10 | 统计代表性 |
+| 14 | 策略 | rollout 采样（随机） | 均值（确定性） | 均值 | play 更平滑 |
+| 15 | 其它 | — | — | `env_frictions` 未填充（仅 critic 观测，不影响 actor 行为） | 无行为影响 |
+| 16 | `noise.curriculum` | 该字段**不存在**（base/x1 config 均未定义） | — | — | play.py 设了它但**无人读取** → 又一处死设置 |
+
+**结论**：摩擦之外仍有 16 项差异，但按"是否可能致摔"分级——**唯一被隔离证明能致摔的只有 armature/被动阻尼越界（已修）**；其余或为训练中心（良性）、或让 play 更简单（地形/噪声/确定性）、或只是覆盖更窄（vy/wz≡0）、或根本未生效（推力、noise.curriculum）。**唯一仍有实质影响的残留差异是"推力扰动在三种 play 模式下都不存在"**——但方向上有扰动的训练反而更"难"，故不解释 play 更差，只是意味着 play 无法复现"被推后恢复"这一能力。
