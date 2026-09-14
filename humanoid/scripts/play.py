@@ -310,13 +310,20 @@ def play(args):
     step_accum = 0      # 步数计数器
     # ===========================================
 
+    # §21b: reset 后站立缓冲（控制步数）。训练中 reset→stand 段(3~5s)→walk 段切指
+    # 令（"站稳再走"）；play 若 reset 后立即注入当前段全速指令，属分布外空中起步
+    # （h=0.699 悬空、双脚离地 0.13m 落地即迈步）——实测左脚先摆→roll 单调右漂
+    # 3~4s 倒（lagfix 回放 3/3 段复现）。缓冲期命令置 0，对齐训练渐进。
+    STAND_BUFFER_STEPS = 150   # 1.5s @100Hz
+    stand_buffer = 0
+
     for i in range(TOTAL_PLAY_STEPS):
 
         actions = policy(obs.detach()) # * 0.
 
         if FIX_COMMAND:
             # 速度阶梯：0 → 0.6 → 0
-            env.commands[:, 0] = current_command(i)
+            env.commands[:, 0] = 0. if stand_buffer > 0 else current_command(i)
             env.commands[:, 1] = 0
             env.commands[:, 2] = 0
             env.commands[:, 3] = 0.
@@ -329,6 +336,11 @@ def play(args):
         # 定义一个计数器在循环外
         
         obs, critic_obs, rews, dones, infos = env.step(actions.detach())
+        # §21b: env0 reset 触发站立缓冲倒计时
+        if dones[robot_index]:
+            stand_buffer = STAND_BUFFER_STEPS
+        elif stand_buffer > 0:
+            stand_buffer -= 1
         # =========== 新增：每一帧都更新统计数据 ===========
         # 即使不录制这一帧，也要统计这一帧的数据，这样平均值才准确
         current_vel_x = env.base_lin_vel[0, 0].item()
