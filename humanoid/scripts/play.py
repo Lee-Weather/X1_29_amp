@@ -134,7 +134,13 @@ def play(args):
         'left_hip_pitch_joint': 0.16,  'right_hip_pitch_joint': 0.16,   # legacy exp1.5 [0.09,0.23] 对称中心
         'left_hip_yaw_joint': 0.0105,  'right_hip_yaw_joint': 0.0105,   # legacy exp1.5 [0.003,0.018] 中心
         'left_knee_pitch_joint': 0.25, 'right_knee_pitch_joint': 0.25,  # legacy exp1.5 [0.18,0.32] CORE 中心
-        # 髋 roll / 双踝无辨识数据，训练用 [0.0001,0.05] 近似 0，回放保持 0
+        # §21c: 踝 / 髋 roll 必须补全——旧版缺键 → 回退 URDF（无 armature 字段）+ asset.armature=0
+        # → 物理 armature=0，而训练范围踝 [0.003,0.04]、髋roll [0.0001,0.05]：0 在训练分布之外
+        # （踝等效惯量骤降 → PD 环带宽过高 → 落地吸不住前向动量 → 前倾前冲）。
+        # 现值 = 训练范围中心（踝 (0.003+0.04)/2=0.0215、髋roll (0.0001+0.05)/2≈0.025）。
+        'left_hip_roll_joint': 0.025,   'right_hip_roll_joint': 0.025,
+        'left_ankle_pitch_joint': 0.0215, 'right_ankle_pitch_joint': 0.0215,
+        'left_ankle_roll_joint': 0.0215,  'right_ankle_roll_joint': 0.0215,
         # ---- 29DOF 上半身（exp0 [0.003,0.04] 覆盖随机化中心；12DOF 任务下多余键自动无效）----
         'lumbar_yaw_joint': 0.0215,   'lumbar_roll_joint': 0.0215,   'lumbar_pitch_joint': 0.0215,
         'left_shoulder_pitch_joint': 0.0215,  'right_shoulder_pitch_joint': 0.0215,
@@ -145,22 +151,12 @@ def play(args):
         'left_wrist_pitch_joint': 0.0215,     'right_wrist_pitch_joint': 0.0215,
         'left_wrist_roll_joint': 0.0215,      'right_wrist_roll_joint': 0.0215,
     }
+    # §21c: 该字段是 PhysX 的**被动关节阻尼**，不是 PD 的 D 增益！旧版误填 control.damping
+    # （髋 3/膝 8/踝 1.5）→ 训练真实范围是 URDF damping=1.0 × U[0.3,1.5]（each_joint=False 单标量）
+    # = 0.3~1.5、中心 0.9 → 旧值 2~9x 越界（膝 8.0 vs 0.9 = 8.9x）→ 关节迟滞跟不上参考。
+    # 现值统一取训练中心 0.9（键集与 fixed_armature 相同 = 全 29 关节）。
     env_cfg.domain_rand.fixed_joint_damping = {
-        'left_hip_pitch_joint': 3.0,  'right_hip_pitch_joint': 3.0,
-        'left_hip_roll_joint': 3.0,   'right_hip_roll_joint': 3.0,
-        'left_hip_yaw_joint': 4.0,    'right_hip_yaw_joint': 4.0,
-        'left_knee_pitch_joint': 8.0, 'right_knee_pitch_joint': 8.0,   # legacy exp1.2 手动调参
-        'left_ankle_pitch_joint': 1.5,'right_ankle_pitch_joint': 1.5,
-        'left_ankle_roll_joint': 1.5, 'right_ankle_roll_joint': 1.5,
-        # ---- 29DOF 上半身（= control.damping 训练值；12DOF 任务下多余键自动无效）----
-        'lumbar_yaw_joint': 4.0,  'lumbar_roll_joint': 4.0,  'lumbar_pitch_joint': 5.0,
-        'left_shoulder_pitch_joint': 2.0,  'right_shoulder_pitch_joint': 2.0,
-        'left_shoulder_roll_joint': 2.0,   'right_shoulder_roll_joint': 2.0,
-        'left_shoulder_yaw_joint': 2.0,    'right_shoulder_yaw_joint': 2.0,
-        'left_elbow_pitch_joint': 1.5,     'right_elbow_pitch_joint': 1.5,
-        'left_elbow_yaw_joint': 1.5,       'right_elbow_yaw_joint': 1.5,
-        'left_wrist_pitch_joint': 0.5,     'right_wrist_pitch_joint': 0.5,
-        'left_wrist_roll_joint': 0.5,      'right_wrist_roll_joint': 0.5,
+        n: 0.9 for n in env_cfg.domain_rand.fixed_armature
     }
     env_cfg.domain_rand.randomize_friction = False
     env_cfg.domain_rand.push_robots = False 
