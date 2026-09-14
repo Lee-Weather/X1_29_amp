@@ -106,6 +106,15 @@ if joystick_use:
 
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
+    # §21c: PLAY_MATCH_TRAIN=1（默认）→ 下方全部"回放 override"被撤销，改用训练域评估。
+    # 动机：play 的手工标定把动力学钉在一组固定值上（关闭全套随机化/噪声），策略被放到
+    # 与训练分布不一致的确定性动力学上评测——§21 的延迟坑（"关闭随机化"=钉最大值）同源。
+    # 先在覆盖前深拷贝训练域三项（覆盖是就地 mutate，引用快照无效）。
+    import copy as _copy
+    MATCH_TRAIN = os.environ.get("PLAY_MATCH_TRAIN", "1") != "0"
+    _train_domain_rand = _copy.deepcopy(env_cfg.domain_rand)
+    _train_noise = _copy.deepcopy(env_cfg.noise)
+    _train_terrain = _copy.deepcopy(env_cfg.terrain)
     # override some parameters for testing
     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 10)
     # env_cfg.terrain.mesh_type = 'trimesh'
@@ -177,6 +186,18 @@ def play(args):
     env_cfg.domain_rand.randomize_dof_lag_timesteps = False  # 防 reset 重抽
     env_cfg.noise.curriculum = False
     env_cfg.commands.heading_command = False
+
+    # §21c: 撤销上面的域覆盖（保留 num_envs / episode_length_s / 延迟对齐）
+    if MATCH_TRAIN:
+        env_cfg.domain_rand = _train_domain_rand
+        env_cfg.noise = _train_noise
+        env_cfg.terrain = _train_terrain
+        print("[play] MATCH_TRAIN: 域已还原为训练配置 "
+              f"(terrain={env_cfg.terrain.mesh_type} {env_cfg.terrain.num_rows}x{env_cfg.terrain.num_cols}, "
+              f"add_noise={env_cfg.noise.add_noise}, "
+              f"friction_rand={env_cfg.domain_rand.randomize_friction}, "
+              f"joint_friction_rand={env_cfg.domain_rand.randomize_joint_friction}, "
+              f"armature_rand={env_cfg.domain_rand.randomize_joint_armature})")
 
     train_cfg.seed = 123145
     print("train_cfg.runner_class_name:", train_cfg.runner_class_name)
