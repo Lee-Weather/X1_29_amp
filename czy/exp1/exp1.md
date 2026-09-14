@@ -1584,3 +1584,49 @@ it500：swing_air≥0.5、episode≥1000；it2000：交替信号主频≥0.8Hz�
 **预注册判据总评**：主判据"回放摔倒间隔≥20s"字面未达（严口径 5.5s/次）但**深摔口径 ∞（120s 零深摔）**——判据本身需分裂为"深摔间隔（∞✅）/触线间隔（5.5s⚠️）"双口径；训练 ep_len 2168<3200 ❌（口径收紧一倍下持平，真实小升）；速度 4 项 2✅1⚠️1❌；结构/style 全✅。
 
 **exp1.13 候选方向**：① base_height_cutoff 0.45→0.42（把"轻微下蹲"还给策略，只拦真下坠——触线 reset 频繁正在打断行走连续性，也可能干扰 AMP buffer 分布）；② 速度调速补第二锚：落点锚已固化，下一步可试 tracking 权重再平衡或对 0.1~0.3 低速档的 low_speed 惩罚加压（低速超速 2.6x 仍是最大失真）；③ 0.7 档回落（0.399）与 cycle_time clamp 上限相关，可查 0.7/0.8 档的 gait_scale 触顶情况。
+
+## §21 train/play 割裂排查：play 的 action 延迟被钉在 400ms（2026-09-14，已验证）
+
+**触发**：用户观察——训练 ep_len 2168/2400=90% 几乎打满（口径修正：dt=0.001×decimation=10 → 100Hz 控制步，max=2400），play 却每 ~5s 摔一次。逐项核查两模式全部差异。
+
+### 1. 差异总表（按"对 play 难度"方向分类）
+
+| # | 项目 | 训练 | play（修正前） | 方向 |
+| --- | --- | --- | --- | --- |
+| 1 | **action 执行延迟**（add_lag） | 每 env 随机 [5,40] 控制步=50~400ms，中值 225ms | **固定 400ms** | **大幅变难 ★根因** |
+| 2 | **q/dq 观测延迟**（add_dof_lag） | 随机 [0,40] 步，reset 重抽 | 仍随机（play.py 漏关） | 变难（与#1叠加，总延迟均值 600ms vs 训练 425ms） |
+| 3 | 地形 | trimesh 20 级（terrain_level 均值 9.45） | plane | 变易 |
+| 4 | obs 噪声 | on (1.5) | off | 变易 |
+| 5 | 推力扰动 | on | off | 变易 |
+| 6 | 刚体摩擦 | [0.2,1.3] 随机 | URDF 默认 ~1.0 | 略变易（分布内偏易侧） |
+| 7 | armature/damping/mass 等 | 全套随机 | 固定校准中心值 | 中性偏易 |
+| 8 | 命令 | gait 边界重采（vx∈[-0.4,1.2]+vy/wz 随机） | 固定 vx 阶梯 | 中性 |
+| 9 | 策略输出 | act() 随机 | mean | 变易 |
+| 10 | gait 调度 | 三段轮换 | 全程 stand 段（FIX_COMMAND 覆盖，相位照常积分） | 无实质影响（已核实同构） |
+| 11 | randomize_coulomb_friction | config 有 | 未关 | 无效项（env 无实现） |
+
+**机制**：`legged_robot.randomize_lag_props` 的 else 分支 `lag_timestep = lag_timesteps_range[1]`——"关闭随机化"实际是"钉在最大延迟 40 控制步=400ms"（训练中 P(lag=40)≈2.8%）；且 play.py 只关了 `randomize_lag_timesteps`，漏关 `add_lag` 与 `randomize_dof_lag_timesteps`。训练 90% ep_len 是 4096 env **均值**，高延迟 env 的摔倒被低延迟 env 稀释；play 单 env 永在 2.8% 概率的最坏格。唯一"变难"方向的差异，解释力完整。
+
+### 2. 修正与验证（同 checkpoint model_37997.pt，标准 0→0.4→0.6→0 各段回放）
+
+play.py 增三行（commit 见 git log）：`lag_timesteps_range=[22,22]`（action 钉回中值 225ms）、`dof_lag_timesteps_range=[20,20]`（观测钉回中值 200ms）、`randomize_dof_lag_timesteps=False`。产物 `czy/data/exp1.12/lagfix/{play_output.mp4, isaac_diag.csv}`。
+
+| 口径 | 修正前（400ms） | **修正后（225+200ms）** | 判定 |
+| --- | --- | --- | --- |
+| 深摔（h<0.3 或 \|角度\|>0.8rad） | 已 0（被严判据掐断） | **0（根本未发生）** | ✅ |
+| 姿态越界 | 22 次/120s 扫描触线 | **0 次/40s，roll max 0.61(35°)、pitch max 0.45(26°)、h min 0.450** | ✅ 质变 |
+| reset 次数 | 5.5s/次（摔倒性） | 5 次/40s，**全部为前冲压低触 h=0.45 线** | 性质改变 |
+| 站立段 | 常摔 | 0 reset，vx 0.031 | ✅ |
+
+### 3. 定性（本轮核心修正）
+
+**"疯狂摔倒"的根因是回放延迟配置错误，不是策略平衡能力**。修正后失败模式变为：起步→前倾加速（vx 0.4 档冲至 1.7~1.9 m/s，pitch 17~26°）→身体压低→h 触 0.45 线被 reset，循环 ~4s/次。姿态从未失控（无深摔、无角度越界、roll≤35°）——**exp1.11 的原始定性（超速）在干净回放环境下回归为主矛盾**：0.4 指令实测 0.57 均值（1.42x）。
+
+**既有结论补丁**：exp1.11/1.12 全部回放定性均基于 400ms 偏难环境——"疯狂摔倒"（exp1.11）与"22 次边缘触线"（exp1.12）需按本节重读；exp1.12 的防摔贡献被低估（其在正确延迟下 0 姿态越界），但**速度调速目标（0.4 档）依旧未达**。
+
+### 4. 工程记录（本地回放环境）
+
+- 解释器：`/home/robot/Anaconda/envs/F1/bin/python`（py38+cu113，isaacgym 仅编到 py38；需 `PATH=F1/bin:$PATH` 供 ninja）
+- **段错误坑**：TRAE 新终端无 DISPLAY → `create_sim(0,0)`（带图形设备）空指针段错误；需前缀 `DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority`（继承桌面会话，今晨直跑成功即因旧终端带此环境）
+- PYTHONPATH 前缀绕 egg-link 抢占（惯例）；gm_mode 占位 b64 免下载；末尾 pygame 线程挂住→产物落盘后 StopCommand 收割
+- 判据脚本：/tmp/fall_check.py（reset=base_pos_x 回跳<-0.3；reset 行 cmd 被 reset_idx 清零属伪影，用行前窗口定性）

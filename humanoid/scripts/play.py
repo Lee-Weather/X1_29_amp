@@ -166,6 +166,15 @@ def play(args):
     env_cfg.domain_rand.randomize_joint_damping = False
     env_cfg.domain_rand.randomize_joint_armature = False
     env_cfg.domain_rand.randomize_lag_timesteps = False
+    # ---- train/play 延迟对齐（exp1.12 排查 §21）----
+    # 陷阱：randomize_lag_timesteps=False 时 legged_robot.randomize_lag_props 的
+    # else 分支取 lag_timesteps_range[1]=40 控制步 → action 延迟被钉在 400ms
+    # （训练 [5,40] 均匀，中值 225ms，抽到 40 的概率仅 2.8%）；且
+    # randomize_dof_lag_timesteps 此前漏关，q/dq 观测延迟每次 reset 随机重抽
+    # [0,40] 步。修正：两路延迟都钉回训练分布中值。
+    env_cfg.domain_rand.lag_timesteps_range = [22, 22]       # action 延迟 ~训练中值 225ms
+    env_cfg.domain_rand.dof_lag_timesteps_range = [20, 20]   # q/dq 观测延迟 ~训练中值 200ms
+    env_cfg.domain_rand.randomize_dof_lag_timesteps = False  # 防 reset 重抽
     env_cfg.noise.curriculum = False
     env_cfg.commands.heading_command = False
 
