@@ -2093,11 +2093,11 @@ $$DS_{clock}(k) = \frac{2\arcsin(k)}{\pi}$$
 
 | 项 | 设置 |
 | --- | --- |
-| 底模 | `model_37997.pt`（exp1.12，已在 `czy/data/exp1.12/`，[8] OSS）→ **git 内置 checkpoint 路线**（`git add -f model_37997.pt`，跨账号 clone 到位） |
+| 底模 | `model_37997.pt`（exp1.12）→ **git 内置 checkpoint 路线已实施**（`git add -f model_37997.pt` 入库 commit e0e4036，跨账号 clone 到位） |
 | 轮次/语义 | 8000 轮：37997 → 45997 |
-| 账号/预算 | [8] `limxmtrzjtdqodlxny`，~¥30（[7] 已标记耗尽） |
+| 账号/预算 | [9] `limxmtrzkgyfkgwo08`，50 元（[8] `limxmtrzjtdqodlxny` 剩 16 元不足以开 29 元任务，标记耗尽；[7] 已耗尽） |
 | 判别器 | **不加 `--disc_fresh`**（保 D 延续，style ~0.15） |
-| 任务 | 项目可复用 `PRO_20260912_032`；`flux task create`（trainType=2、4090D V000124 / ESKU000001、personalDataPath 空、resumeFrom* 空、git 内置 checkpoint）→ `--dry-run` 应 exit 10 → 正式 |
+| 任务 | 项目 `PRO_20260908_030`（[9] 新账号下官方 Luna 工程模板，无跨账号归属问题）；trainType=2、4090D V000124 / ESKU000001、personalDataPath 空、resumeFrom* 空（走 git 内置 checkpoint） |
 | startScript | `gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand --headless --resume --ckpt_path=X1_29_amp/model_37997.pt --max_iterations=8000` |
 
 **判据（预注册；基线 = §13.4b Step 1 实测，plane + 训练域 512env×1551ep）**：
@@ -2116,7 +2116,12 @@ $$DS_{clock}(k) = \frac{2\arcsin(k)}{\pi}$$
 | AMP | style | ~0.15 | **≥0.10** |
 
 **监控节奏**：it500（提前终止率 ≤12.8% 不劣、style 未崩）→ it2000（腾空/双支撑初见方向）→ it5000（判据收敛）。
-**止损**：style<0.10 或 提前终止率变差 → 撤最新改动；若 A 触发贴地（`swing_air`/`foot_height` 塌），把 k 从 0.235 回调 0.2（DS 12.8%）。
+**止损**：style<0.10 或 提前终止率变差 → 撤最新改动；若 A 触发贴地（`swing_air`/`foot_height` 塌），把 k 从 0.25 回调 0.2（DS 12.8%）。
+
+**云端启动记录（2026-09-16）**：
+- commit **e0e4036** 已 push（`Lee-Weather/X1_29_amp` main）：plane 地形 + `double_support_k=0.25` + git 内置 `model_37997.pt`（23MB，`add -f`，先例 4dca161/44ef417/d75b9b9）
+- 账号 [9] `limxmtrzkgyfkgwo08`（userId 4380，50 元）登录后创建并启动
+- 任务 **TASK_20260916_022**（`x1-exp1.13-ds-k025`，项目 PRO_20260908_030，ESKU000001 / 镜像 V000124），`create --dry-run` exit 10 通过后正式创建，`run` 启动成功 **taskStatus=3（运行中）**
 
 ### 13.7 本轮不做
 
