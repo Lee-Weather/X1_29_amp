@@ -210,7 +210,10 @@ class X1DHStandEnv(LeggedRobot):
         # right foot stance
         stance_mask[:, 1] = sin_pos < 0
         # Add double support phase
-        stance_mask[torch.abs(sin_pos) < 0.1] = 1
+        # exp1.13: 窗口半宽改由 cfg.rewards.double_support_k 驱动（旧值硬编码 0.1 = 钟上 DS 仅 6.38%）。
+        # 钟上双支撑占比 = 2·asin(k)/π；该值同时决定 feet_contact_number 的 +1 可得时窗、
+        # swing_air/feet_clearance 的摆动窗与 base_height 的支撑脚判据。
+        stance_mask[torch.abs(sin_pos) < self.cfg.rewards.double_support_k] = 1
 
         # stand mask == 1 means stand leg 
         return stance_mask

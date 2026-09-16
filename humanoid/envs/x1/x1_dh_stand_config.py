@@ -84,8 +84,13 @@ class X1DHStandCfg(LeggedRobotCfg):
         fix_base_link = False
 
     class terrain(LeggedRobotCfg.terrain):
-        # mesh_type = 'plane'
-        mesh_type = 'trimesh'
+        # exp1.13: 训练地形改为全平（真·无限平面）。原 trimesh 20x20 随机地形实测为
+        # 30% flat + 20% rough flat(±1cm) + 40% ≤5.4° 缓坡 + 10% mm 级凸块，本身近乎平地，
+        # 但 curriculum=False 时 reset 出生点按 U(-4,4)m 撒进 8m 格（86% 落在坡面/凹坑上），
+        # 且 z 取中心 2m 窗口最大高度 → 与实际落点最多差 ±0.15m（凹格直接穿地），
+        # 是每个 episode 周期性注入的强扰动源。改 plane 同时与 play.py/play_speed_sweep 一致。
+        # 下方 num_rows/num_cols/terrain_dict/*_range 在 plane 下不再生效（仅 trimesh/heightfield 使用）。
+        mesh_type = 'plane'
         curriculum = False
         # rough terrain only:
         measure_heights = False
@@ -389,6 +394,14 @@ class X1DHStandCfg(LeggedRobotCfg):
         feet_to_ankle_distance = 0.041
         foot_place_sigma = 0.15        # exp1.12: 落点锚容差——|foot_x_fwd - tgt| 的 exp 核尺度（§20 快测校准）
         cycle_time = 0.7
+        # ---- exp1.13: 相位钟的双支撑窗（§13.4b/§13.4c 实证）----
+        # 钟上双支撑占比 = 2·asin(k)/π：k=0.1 → 6.38%（旧值，近乎"跑"），k=0.25 → 16.09%
+        # 实测依据：Step1 多 env 诊断显示腾空占行走时间 7.83%（93.1% 的 episode 有 ≥50ms 腾空），
+        # 且每次提前终止前 0.5s 腾空激增 3.0x、双支撑塌到 5.42%（跌破旧钟值）。
+        # 加宽 k 的双重作用：① 过渡相位容差 58ms → 147ms；② `feet_contact_number` 的 +1
+        # 只在双支撑窗可得（单支撑正确=0、腾空=−1）→ "双脚都在地上"的可得奖励时窗提 2.5 倍。
+        # 人类常速步行双支撑相约占周期 20~25%，16.09% 仍偏保守；上限 0.30（DS≤19.4%）防"贴地吸引子"。
+        double_support_k = 0.25
 
         # ---- exp1.7: 速度自适应步频（劈叉滑行根治，§17）----
         # 机理：固定周期下指令速度越高步幅需求越大（0.6 m/s@4.78s 需 1.43 m/步，物理不可达）
