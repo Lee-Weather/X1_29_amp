@@ -36,6 +36,9 @@ OUT_DIR = os.environ.get("SB_OUT", os.path.join(LEGGED_GYM_ROOT_DIR, "czy", "dat
 CKPT = os.environ.get("SB_CKPT", os.path.join(LEGGED_GYM_ROOT_DIR, "czy", "data", "exp1.12", "model_37997.pt"))
 WIN = 50          # 终止前窗：50 控制步 = 0.5s @100Hz
 HIST = 200        # 判别 pass 的多尺度缓冲：200 控制步 = 2.0s
+HEAD_W = 100      # exp2.0：行走片段"头部窗" = 首 1.0s（用于"段首水平"与"段内斜率"）
+HEAD_MIN = 30     # 头部窗最小样本数（0.3s）——不足则不计斜率，避免短片段噪声
+PITCH_SIGN_NOTE = "正=前倾，负=后仰"   # pitch = asin(2(qw·qy − qz·qx))，绕 +y 轴转角
 FLIGHT_MIN = 5    # 腾空事件门限：5 控制步 = 50ms
 WALK_CMD_X = 0.05  # 行走段判据（同 §13.1）
 
@@ -85,6 +88,16 @@ def main():
         # 否则会被"timeout 恒在结尾 stand 段结束（cmd≈0）"这个选择效应污染
         "wz_gt05": zero(), "wz_gt15": zero(), "wz_gt30": zero(),
         "vy_gt05": zero(), "vy_gt15": zero(), "vx_gt08": zero(),
+        # ---- exp2.0 修改四：躯干俯仰（带符号）----
+        # 背景：历轮预算表只存 |pitch|max（pitch_max），符号与段内漂移全丢，
+        # 导致"持续后仰"这一最强失稳信号长期不可见（详见 czy/exp1/exp2.md §1）。
+        "pitch_sum": zero(),                              # Σpitch（行走样本）→ 行走段水平
+        "pitch_hd_sum": zero(), "pitch_hd_n": zero(),      # 片段头 1.0s 累加 → 段首（起步）水平
+        "ws_sum": zero(), "ws_tp": zero(), "ws_n": zero(),  # 当前行走片段 Σp / Σt·p / n（整段斜率）
+        "slope_sum": zero(), "slope_cnt": zero(),          # 已结算片段斜率累加 → 段内斜率(rad/s)
+        "seg_first": zero(), "seg_last": zero(),           # 片段首 / 末时刻 pitch
+        "span_sum": zero(), "span_cnt": zero(),            # 片段首末 pitch 差累加 → 段内跨度
+        "w_age": zero(),                                   # 行走片段年龄（步）
     }
     fl_hist = torch.zeros(N, WIN, device=dev)
     ds_hist = torch.zeros(N, WIN, device=dev)
@@ -92,10 +105,12 @@ def main():
     h_hist = torch.zeros(N, 25, device=dev)     # 高度回溯 0.25s（区分"蹲下"与"塌陷"）
     # ---- 判别 pass（§13.4c）：多时间尺度滚动缓冲 B[:, :, k] + 腾空事件性质 ----
     # k: 0=walk 1=flight 2=ds 3=|roll| 4=|roll_rate| 5=|pitch| 6=h 7=τ饱和(任一) 8=τ饱和(腿)
-    KB = 9
+    #    9=pitch(带符号)  ← exp2.0 修改四：躯干俯仰方向（0.0 语义：正=前倾、负=后仰）
+    KB = 10
     B = torch.zeros(N, HIST, KB, device=dev)
     prev_contact = torch.zeros(N, 2, dtype=torch.bool, device=dev)
     prev_none = torch.zeros(N, dtype=torch.bool, device=dev)
+    walk_prev = torch.zeros(N, dtype=torch.bool, device=dev)   # 上一步是否在行走（取片段下降沿）
     for k in ("fo_n", "fo_h_sum", "fo_h_min", "fo_h_lt052", "fo_roll_sum", "fo_roll_max",
               "fo_absin_sum", "fo_lost_support", "fo_prev_both",
               "fo_last_h", "fo_last_roll", "fo_last_absin",
@@ -120,9 +135,10 @@ def main():
         wk_hist[ids] = 0.
         h_hist[ids] = 0.
         B[ids] = 0.
+        walk_prev[ids] = False
 
     def wrapped_check():
-        nonlocal prev_contact, prev_none      # 跨步保持"上一控制步的接触态"
+        nonlocal prev_contact, prev_none, walk_prev   # 跨步保持"上一控制步的接触态 / 行走标志"
         # ---- 本步量（复位前的终止态）----
         contact = env.contact_forces[:, env.feet_indices, 2] > 5.          # (N,2)
         both = contact.all(dim=1)
@@ -164,6 +180,7 @@ def main():
         B[:, -1, 3] = env.base_euler_xyz[:, 0].abs()
         B[:, -1, 4] = env.base_ang_vel[:, 0].abs()      # 体轴 roll 角速度
         B[:, -1, 5] = env.base_euler_xyz[:, 1].abs()
+        B[:, -1, 9] = env.base_euler_xyz[:, 1] * walk.float()  # exp2.0：带符号 pitch（正=前倾，负=后仰）
         B[:, -1, 6] = h
         B[:, -1, 7] = sat_any.float()
         B[:, -1, 8] = sat_leg.float()
@@ -208,6 +225,52 @@ def main():
         st["vy_gt05"] += (walk & (avy > 0.05)).float()
         st["vy_gt15"] += (walk & (avy > 0.15)).float()
         st["vx_gt08"] += (walk & (env.commands[:, 0] > 0.8)).float()
+
+        # ---- exp2.0 修改四：躯干俯仰（带符号）累积 ----
+        # 三个量：
+        #   ① 行走段水平 pitch_sum/n_walk      —— 全程均值（含累积效应）
+        #   ② 段首水平  pitch_hd_sum/pitch_hd_n —— 各行走片段首 1.0s（= "起步姿态"）
+        #   ③ 段内斜率  slope_sum/slope_cnt     —— 各**完整行走片段**整体最小二乘斜率
+        # 关键：必须**按行走片段各自拟合**，不能跨片段整段拟合一个斜率
+        #（exp2.md §1 证据 7：同代两个速度段斜率符号可相反，跨片段拟合会被污染）。
+        # 片段内掩码恒真（实测每 episode 约 1 个片段，slope_n≈1）→ t = 0..n−1，
+        # Σt 与 Σt² 有解析式，只需额外累计 Σt·p。
+        pitch = env.base_euler_xyz[:, 1]
+        st["pitch_sum"] += pitch * wf
+        w_age_new = torch.where(walk, st["w_age"] + 1., torch.zeros_like(st["w_age"]))
+        t_idx = (w_age_new - 1.).clamp(min=0.)
+        hf = (walk & (w_age_new <= HEAD_W)).float()
+        st["pitch_hd_sum"] += pitch * hf
+        st["pitch_hd_n"] += hf
+        st["ws_sum"] += pitch * wf
+        st["ws_tp"] += pitch * wf * t_idx
+        st["ws_n"] += wf
+        # 片段首末 pitch（跨度 = 末 − 首，直接量化"越走越后仰"的总量，不受非单调影响）
+        st["seg_first"] = torch.where(walk & ~walk_prev, pitch, st["seg_first"])
+        st["seg_last"] = torch.where(walk, pitch, st["seg_last"])
+        # 片段结束（行走掩码下降沿）→ 结算该片段整体斜率（单位 rad/步 → 转 rad/s）
+        seg_end = walk_prev & ~walk & (st["ws_n"] >= HEAD_MIN)
+        if seg_end.any():
+            n = st["ws_n"][seg_end]
+            sp = st["ws_sum"][seg_end]
+            stp = st["ws_tp"][seg_end]
+            sum_t = n * (n - 1.) / 2.
+            sum_tt = n * (n - 1.) * (2. * n - 1.) / 6.
+            den = n * sum_tt - sum_t ** 2
+            slope = torch.where(den > 1e-6, (n * stp - sum_t * sp) / den.clamp(min=1e-6),
+                                torch.zeros_like(den)) / env.dt      # rad/步 → rad/s
+            st["slope_sum"][seg_end] += slope
+            st["slope_cnt"][seg_end] += 1.
+            st["span_sum"][seg_end] += st["seg_last"][seg_end] - st["seg_first"][seg_end]
+            st["span_cnt"][seg_end] += 1.
+        # 片段结束（含样本不足未计斜率者）→ 清空整段累加器
+        clear_ws = (seg_end | (~walk & (st["ws_n"] > 0))).nonzero(as_tuple=False).flatten()
+        if len(clear_ws) > 0:
+            st["ws_sum"][clear_ws] = 0.
+            st["ws_tp"][clear_ws] = 0.
+            st["ws_n"][clear_ws] = 0.
+        st["w_age"] = w_age_new
+        walk_prev = walk.clone()
         # 腾空事件（连续段；50/100/150ms 三档桶）
         run = torch.where(none & walk, st["fl_run"] + 1., torch.zeros_like(st["fl_run"]))
         closed = ~(none & walk)
@@ -268,6 +331,7 @@ def main():
                     "h": sub[:, -W:, 6].sum(dim=1) / cn,
                     "sat": sub[:, -W:, 7].sum(dim=1) / cn,
                     "satleg": sub[:, -W:, 8].sum(dim=1) / cn,
+                    "pitch_signed": sub[:, -W:, 9].sum(dim=1) / cn,   # exp2.0：窗口内带符号 pitch 均值
                 }
             for k, eid in enumerate(ids.tolist()):
                 t = ids[k]
@@ -324,6 +388,15 @@ def main():
                     h_min=round(float(st["h_min"][t]), 4),
                     roll_max=round(float(st["er_max"][t]), 4),
                     pitch_max=round(float(st["ep_max"][t]), 4),
+                    # ---- exp2.0 修改四：躯干俯仰（正=前倾，负=后仰；历轮只有 pitch_max 绝对值）----
+                    walk_pitch_mean=round(float(st["pitch_sum"][t]) / nw, 4) if nw else np.nan,
+                    walk_pitch_start=round(float(st["pitch_hd_sum"][t]) / float(st["pitch_hd_n"][t]), 4)
+                    if float(st["pitch_hd_n"][t]) > 0 else np.nan,
+                    walk_pitch_slope=round(float(st["slope_sum"][t]) / float(st["slope_cnt"][t]), 5)
+                    if float(st["slope_cnt"][t]) > 0 else np.nan,
+                    walk_pitch_span=round(float(st["span_sum"][t]) / float(st["span_cnt"][t]), 4)
+                    if float(st["span_cnt"][t]) > 0 else np.nan,
+                    walk_pitch_slope_n=int(st["slope_cnt"][t].item()),
                     wz_max=round(float(st["wz_max"][t]), 4),
                     vx_mean=round(float(st["vx_sum"][t]) / nw, 3) if nw else np.nan,
                     cmd_x_mean=round(float(st["cmd_sum"][t]) / nw, 3) if nw else np.nan,
@@ -351,7 +424,8 @@ def main():
                 _pct = {"fl", "ds", "sat", "satleg"}
                 for tagname in hz:
                     rec[f"n_{tagname}"] = int(hz[tagname]["n"][k].item())
-                    for key in ("fl", "ds", "aroll", "adroll", "apitch", "h", "sat", "satleg"):
+                    for key in ("fl", "ds", "aroll", "adroll", "apitch", "pitch_signed",
+                                "h", "sat", "satleg"):
                         v = float(hz[tagname][key][k])
                         rec[f"{key}_{tagname}"] = round(100 * v, 2) if key in _pct else round(v, 4)
                 records.append(rec)

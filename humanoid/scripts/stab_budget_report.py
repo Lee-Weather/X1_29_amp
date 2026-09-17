@@ -140,6 +140,52 @@ def main():
                                       "vx_end", "wz_end", "sin_end", "ep_len"]]
               .median().round(3).to_string())
 
+    # ---- ⑨ 躯干俯仰（exp2.0 修改四新增口径）----
+    if "walk_pitch_mean" in df.columns:
+        TAG = ["2000ms", "1000ms", "500ms", "100ms"]
+        pit_cols = ["walk_pitch_mean", "walk_pitch_start", "walk_pitch_slope", "walk_pitch_span",
+                    "pitch_max"]
+        print("\n-- ⑨ 躯干俯仰（pitch = 绕 +y 轴转角 → **正=前倾，负=后仰**）--")
+        print("注：历轮只有 pitch_max（绝对值），符号与段内漂移全丢；本段为 exp2.0 新增口径，"
+              "所有验收判据依赖它")
+        print(walk[pit_cols].describe(percentiles=[0.05, 0.5, 0.95]).round(4).to_string())
+        print(f"\n段内斜率有效 {int(walk.walk_pitch_slope.notna().sum())}/{len(walk)} episodes"
+              f"（每个**完整行走片段**整体最小二乘，跨片段取均值；片段 <0.3s 不计入）")
+        print(f"段内跨度（片段末 pitch − 首 pitch，负 = 越走越后仰）："
+              f"中位 {walk.walk_pitch_span.median():+.4f} rad"
+              f"　|　水平法对照 (walk_pitch_mean − walk_pitch_start)："
+              f"中位 {(walk.walk_pitch_mean - walk.walk_pitch_start).median():+.4f} rad")
+        print("  注：两者差异大 = 段内轨迹**非单调**（先深后回），此时直线斜率会低估加深总量，"
+              "以「跨度」与「水平」为准")
+        print(f"后仰(walk_pitch_mean<0) 占 {100*(walk.walk_pitch_mean<0).mean():.1f}% | "
+              f"强后仰(<-0.15) 占 {100*(walk.walk_pitch_mean<-0.15).mean():.1f}% | "
+              f"段内持续加深(slope<-0.01 rad/s) 占 {100*(walk.walk_pitch_slope<-0.01).mean():.1f}%")
+        print("\n[按终止原因（行走段）]")
+        print(walk.groupby("reason")[pit_cols].median().round(4).to_string())
+
+        tw = walk[walk.terminated]
+        if len(tw):
+            both = (tw.pitch_end < -0.3) & (tw.vx_end < 0)
+            print("\n[终止时刻俯仰方向 —— 检验'上半身后仰 → 反向迈步/摔倒'签名]")
+            tb = pd.DataFrame({
+                "n": tw.groupby("reason").size(),
+                "pitch_end中位": tw.groupby("reason").pitch_end.median().round(3),
+                "后仰<−0.3占%": (100 * tw.assign(f=tw.pitch_end < -0.3).groupby("reason").f.mean()).round(0),
+                "vx_end中位": tw.groupby("reason").vx_end.median().round(3),
+                "反向<0占%": (100 * tw.assign(f=tw.vx_end < 0).groupby("reason").f.mean()).round(0),
+            })
+            tb["后仰且反向占%"] = (100 * tw.assign(f=(tw.pitch_end < -0.3) & (tw.vx_end < 0))
+                              .groupby("reason").f.mean()).round(0)
+            print(tb.to_string())
+            print(f"\n行走段提前终止 {len(tw)} 次：后仰(pitch_end<−0.3) {int((tw.pitch_end<-0.3).sum())}"
+                  f"（{100*(tw.pitch_end<-0.3).mean():.0f}%）| 反向(vx_end<0) {int((tw.vx_end<0).sum())}"
+                  f"（{100*(tw.vx_end<0).mean():.0f}%）| **后仰且反向 {int(both.sum())}"
+                  f"（{100*both.mean():.0f}%）** ← exp2.0 主判据之一（基线 exp1.12 = 41%）")
+            pc = [f"pitch_signed_{t}" for t in TAG]
+            print("\n[各窗口带符号 pitch（窗内行走样本归一；负=后仰）]")
+            print("  注：窗口内无行走样本时显示 0.000（非真实读数）——timeout 组结尾恒为 stand 段"                  "故全 0，用 n_{tag} 列识别；该组不作为 pitch 判据组")
+            print(walk.groupby("reason")[pc].median().round(3).to_string())
+
     if a.show:
         print("\n-- 逐 episode --")
         print(walk.to_string(index=False))

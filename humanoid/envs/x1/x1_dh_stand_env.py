@@ -664,6 +664,10 @@ class X1DHStandEnv(LeggedRobot):
         # exp1: AMP 历史整窗待填充（下一步 _sample_amp 用复位后状态覆盖，防旧 episode 样本污染）
         if getattr(self, "amp_enabled", False):
             self._amp_hist_fill[env_ids] = True
+
+        # exp2.0: 躯干俯仰 EMA 复位为**复位后的当前姿态**（勿置 0——否则上一 episode 的后仰
+        # 会在新 episode 开头被"记着"，产生跨 episode 泄漏）；base_euler_xyz 已在上方刷新
+        self._pitch_lpf[env_ids] = self.base_euler_xyz[env_ids, 1]
         
     
     def _init_buffers(self):
@@ -675,6 +679,8 @@ class X1DHStandEnv(LeggedRobot):
             self.num_envs, device=self.device, dtype=torch.long)
         self.gait_start = torch.randint(0, 2, (self.num_envs,)).to(self.device)*0.5
         self._gait_phase = torch.zeros(self.num_envs, device=self.device)  # exp1.7: 相位积分（自适应步频路径）
+        # exp2.0: "持续后仰"约束的 EMA 状态（低通后的躯干俯仰，见 _reward_torso_pitch_lpf）
+        self._pitch_lpf = torch.zeros(self.num_envs, device=self.device)
 
         # 29DOF 支持：腿部 dof 索引按关节名解析，不依赖 URDF 关节顺序
         # （12DOF URDF 下解析结果即 0-11，行为与旧硬编码完全等价）
@@ -1132,6 +1138,27 @@ class X1DHStandEnv(LeggedRobot):
         quat_mismatch = torch.exp(-torch.sum(torch.abs(self.base_euler_xyz[:, :2]), dim=1) * 10)
         orientation = torch.exp(-torch.norm(self.projected_gravity[:, :2], dim=1) * 20)
         return (quat_mismatch + orientation) / 2.
+
+    def _reward_torso_pitch_lpf(self):
+        """
+        exp2.0：抑制"持续后仰"——对 EMA 低通后的躯干俯仰与目标（直立）之差给奖。
+
+        · 为什么用低通量而非瞬时量：正常步态每步有 ≈0.05 rad 俯仰摆动，瞬时惩罚会误伤步态
+          节律；低通后只保留"持续后仰"这一实测签名（多环境预算表：行走段 pitch 均值 −0.177、
+          99.9% 的行走 episode 为后仰，且段内再累积 ≈0.20 rad）。pitch 的瞬时分量已由
+          `orientation` 覆盖（本项与其互补，不是重复）。
+        · 为什么必须带线性底：纯指数核在远端会饱和。以 σ=20 为例，基线后仰 d≈0.15 处
+          exp(−3)=0.050、梯度仅 20×0.050=1.0 /rad，d≈0.25 处只剩 0.13 /rad → 恰好**在唯一
+          需要的区间**失去梯度（这也是 σ 最终取 8 的原因：|d| 核在 0.15/0.25 处仍保留
+          1.94/1.08 /rad）。线性底再给出与偏移量**无关**的恒定梯度，负责 d>0.3 的远端；
+          "exp + 线性底"的写法与本仓 `_reward_ref_joint_pos` / `_reward_hip_ref` 一致。
+        · 符号：pitch = asin(2(qw·qy − qz·qx))，绕 +y 轴 → **正=前倾、负=后仰**。
+        """
+        alpha = self.cfg.rewards.pitch_lpf_alpha
+        self._pitch_lpf = alpha * self._pitch_lpf + (1.0 - alpha) * self.base_euler_xyz[:, 1]
+        d = torch.abs(self._pitch_lpf - self.cfg.rewards.pitch_target)
+        return (torch.exp(-self.cfg.rewards.pitch_sigma * d)
+                - self.cfg.rewards.pitch_lin_coef * d.clamp(0.0, self.cfg.rewards.pitch_lin_cap))
 
     def _reward_feet_contact_forces(self):
         """

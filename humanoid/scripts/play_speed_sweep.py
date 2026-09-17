@@ -55,24 +55,28 @@ x_vel_cmd, y_vel_cmd, yaw_vel_cmd = 0.0, 0.0, 0.0
 joystick_use = True
 joystick_opened = False
 
-# =========== 速度阶梯（50Hz 控制步数, command_x [m/s]）：0.1→0.8 各 15s（exp1.11 速度扫描） ===========
+# =========== 速度阶梯（控制步数@100Hz, command_x [m/s]）：0.1→0.8（exp1.11 速度扫描口径） ===========
+# §21d 口径更正：1 行 = 1 控制步 = 10ms（dt=0.001×decimation10），750 步 = 7.5s/档（注释"15s"为旧 50Hz 误记）
 VEL_PROFILE = [
-    (750, 0.1),  # 15s
-    (750, 0.2),  # 15s
-    (750, 0.3),  # 15s
-    (750, 0.4),  # 15s
-    (750, 0.5),  # 15s
-    (750, 0.6),  # 15s
-    (750, 0.7),  # 15s
-    (750, 0.8),  # 15s
+    (750, 0.1),
+    (750, 0.2),
+    (750, 0.3),
+    (750, 0.4),
+    (750, 0.5),
+    (750, 0.6),
+    (750, 0.7),
+    (750, 0.8),
 ]
-TOTAL_PLAY_STEPS = sum(steps for steps, _ in VEL_PROFILE)
+# §21b: 起步站立缓冲——训练分布是"先站稳再走"（stand 段 3~5s），spawn 即给速度属分布外空中起步
+STAND_BUFFER_STEPS = 150   # 1.5s @100Hz
+EFFECTIVE_PROFILE = [(STAND_BUFFER_STEPS, 0.0)] + VEL_PROFILE
+TOTAL_PLAY_STEPS = sum(steps for steps, _ in EFFECTIVE_PROFILE)
 
 
 def current_command(step_idx):
-    """返回控制步 step_idx 对应的 command_x。"""
+    """返回控制步 step_idx 对应的 command_x（含起步站立缓冲）。"""
     acc = 0
-    for steps, vel in VEL_PROFILE:
+    for steps, vel in EFFECTIVE_PROFILE:
         if step_idx < acc + steps:
             return vel
         acc += steps
@@ -110,6 +114,13 @@ if joystick_use:
 
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
+    # §21c: PLAY_MATCH_TRAIN=1（默认）→ 下方全部"回放 override"被撤销，改用训练域评估（与 play.py 同口径）。
+    # 先在覆盖前深拷贝训练域三项（覆盖是就地 mutate，引用快照无效）。
+    import copy as _copy
+    MATCH_TRAIN = os.environ.get("PLAY_MATCH_TRAIN", "1") != "0"
+    _train_domain_rand = _copy.deepcopy(env_cfg.domain_rand)
+    _train_noise = _copy.deepcopy(env_cfg.noise)
+    _train_terrain = _copy.deepcopy(env_cfg.terrain)
     # override some parameters for testing
     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 10)
     # env_cfg.terrain.mesh_type = 'trimesh'
@@ -129,7 +140,11 @@ def play(args):
         'left_hip_pitch_joint': 0.16,  'right_hip_pitch_joint': 0.16,   # legacy exp1.5 [0.09,0.23] 对称中心
         'left_hip_yaw_joint': 0.0105,  'right_hip_yaw_joint': 0.0105,   # legacy exp1.5 [0.003,0.018] 中心
         'left_knee_pitch_joint': 0.25, 'right_knee_pitch_joint': 0.25,  # legacy exp1.5 [0.18,0.32] CORE 中心
-        # 髋 roll / 双踝无辨识数据，训练用 [0.0001,0.05] 近似 0，回放保持 0
+        # §21c: 踝 / 髋 roll 必须补全——旧版缺键 → 回退 URDF（无 armature 字段）+ asset.armature=0
+        # → 物理 armature=0，训练范围踝 [0.003,0.04]、髋roll [0.0001,0.05]：0 在训练分布之外（前冲根因）
+        'left_hip_roll_joint': 0.025,   'right_hip_roll_joint': 0.025,
+        'left_ankle_pitch_joint': 0.0215, 'right_ankle_pitch_joint': 0.0215,
+        'left_ankle_roll_joint': 0.0215,  'right_ankle_roll_joint': 0.0215,
         # ---- 29DOF 上半身（exp0 [0.003,0.04] 覆盖随机化中心；12DOF 任务下多余键自动无效）----
         'lumbar_yaw_joint': 0.0215,   'lumbar_roll_joint': 0.0215,   'lumbar_pitch_joint': 0.0215,
         'left_shoulder_pitch_joint': 0.0215,  'right_shoulder_pitch_joint': 0.0215,
@@ -140,22 +155,11 @@ def play(args):
         'left_wrist_pitch_joint': 0.0215,     'right_wrist_pitch_joint': 0.0215,
         'left_wrist_roll_joint': 0.0215,      'right_wrist_roll_joint': 0.0215,
     }
+    # §21c: 该字段是 PhysX 的**被动关节阻尼**，不是 PD 的 D 增益！旧版误填 control.damping
+    # （髋 3/膝 8/踝 1.5）→ 训练真实范围是 URDF damping=1.0 × U[0.3,1.5] = 0.3~1.5、中心 0.9，
+    # 旧值 2~9x 越界（膝 8.0 vs 0.9）→ 关节迟滞跟不上参考。现值统一取训练中心 0.9。
     env_cfg.domain_rand.fixed_joint_damping = {
-        'left_hip_pitch_joint': 3.0,  'right_hip_pitch_joint': 3.0,
-        'left_hip_roll_joint': 3.0,   'right_hip_roll_joint': 3.0,
-        'left_hip_yaw_joint': 4.0,    'right_hip_yaw_joint': 4.0,
-        'left_knee_pitch_joint': 8.0, 'right_knee_pitch_joint': 8.0,   # legacy exp1.2 手动调参
-        'left_ankle_pitch_joint': 1.5,'right_ankle_pitch_joint': 1.5,
-        'left_ankle_roll_joint': 1.5, 'right_ankle_roll_joint': 1.5,
-        # ---- 29DOF 上半身（= control.damping 训练值；12DOF 任务下多余键自动无效）----
-        'lumbar_yaw_joint': 4.0,  'lumbar_roll_joint': 4.0,  'lumbar_pitch_joint': 5.0,
-        'left_shoulder_pitch_joint': 2.0,  'right_shoulder_pitch_joint': 2.0,
-        'left_shoulder_roll_joint': 2.0,   'right_shoulder_roll_joint': 2.0,
-        'left_shoulder_yaw_joint': 2.0,    'right_shoulder_yaw_joint': 2.0,
-        'left_elbow_pitch_joint': 1.5,     'right_elbow_pitch_joint': 1.5,
-        'left_elbow_yaw_joint': 1.5,       'right_elbow_yaw_joint': 1.5,
-        'left_wrist_pitch_joint': 0.5,     'right_wrist_pitch_joint': 0.5,
-        'left_wrist_roll_joint': 0.5,      'right_wrist_roll_joint': 0.5,
+        n: 0.9 for n in env_cfg.domain_rand.fixed_armature
     }
     env_cfg.domain_rand.randomize_friction = False
     env_cfg.domain_rand.push_robots = False 
@@ -170,8 +174,25 @@ def play(args):
     env_cfg.domain_rand.randomize_joint_damping = False
     env_cfg.domain_rand.randomize_joint_armature = False
     env_cfg.domain_rand.randomize_lag_timesteps = False
+    # ---- train/play 延迟对齐（exp1.12 排查 §21，与 play.py 同款）----
+    # 陷阱：randomize_lag_timesteps=False 时 else 分支取 range[1]=40 步钉最大延迟；
+    # 且 randomize_dof_lag_timesteps 漏关会逐 reset 重抽。修正：两路延迟钉回训练中值。
+    env_cfg.domain_rand.lag_timesteps_range = [22, 22]       # action 延迟 ~训练中值
+    env_cfg.domain_rand.dof_lag_timesteps_range = [20, 20]   # q/dq 观测延迟 ~训练中值
+    env_cfg.domain_rand.randomize_dof_lag_timesteps = False  # 防 reset 重抽
     env_cfg.noise.curriculum = False
     env_cfg.commands.heading_command = False
+
+    # §21c: 撤销上面的域覆盖（保留 num_envs / episode_length_s / 延迟对齐）
+    if MATCH_TRAIN:
+        env_cfg.domain_rand = _train_domain_rand
+        env_cfg.noise = _train_noise
+        env_cfg.terrain = _train_terrain
+        print("[sweep] MATCH_TRAIN: 域已还原为训练配置 "
+              f"(terrain={env_cfg.terrain.mesh_type} {env_cfg.terrain.num_rows}x{env_cfg.terrain.num_cols}, "
+              f"add_noise={env_cfg.noise.add_noise}, "
+              f"friction_rand={env_cfg.domain_rand.randomize_friction}, "
+              f"armature_rand={env_cfg.domain_rand.randomize_joint_armature})")
 
     train_cfg.seed = 123145
     print("train_cfg.runner_class_name:", train_cfg.runner_class_name)
@@ -575,9 +596,10 @@ def play(args):
 
     print("\n===== Speed Profile Summary =====")
     acc = 0
-    for seg_i, (steps, vel) in enumerate(VEL_PROFILE):
+    for seg_i, (steps, vel) in enumerate(EFFECTIVE_PROFILE):
         seg_vels = diag["base_vel_x"][acc:acc + steps]
-        print(f"  Segment {seg_i}: cmd={vel:.2f} m/s | avg_real={np.mean(seg_vels):.3f} m/s")
+        tag = "stand_buffer" if seg_i == 0 else f"cmd={vel:.2f} m/s"
+        print(f"  Segment {seg_i} ({tag}): avg_real={np.mean(seg_vels):.3f} m/s")
         acc += steps
 
     if RENDER:
