@@ -502,7 +502,15 @@ class X1DHStandCfg(LeggedRobotCfg):
             # ---- exp2.0: 躯干俯仰"持续分量"专项约束（新增；orientation 保持不动）----
             # 权重取与步态类同量级（foot_place 1.0 / foot_height 1.0 / stand_still 3.5 / feet_air_time 1.5），
             # 但仍低于它们——目的是"纠正偏置"而非主导步态，避免 exp1.2 那种量纲淹没/反客为主。
-            torso_pitch_lpf = 1.5
+            # ⚠️ exp2.1 归零（纯减法方案）：exp2.0 云端 3000 轮验收 ❌ 未达标——
+            #   提前终止率 12.8%→21.3%、姿态终止 31→89（其中 88% 为后仰）、pitch>0.8 由 19→76（4x），
+            #   而 walk_pitch_mean 仅 −0.177→−0.149 → **均值改善、重尾恶化**；
+            #   三代同协议对比显示"两极分化"：健康组 speed_ratio 0.64→0.66→0.70 逐代↑、
+            #   而 pitch 终止组 0.46→0.33→0.27 逐代↓ → 问题是鲁棒性方差退化，非缺约束。
+            # 归零而非删除：保留实现以便后续复用（本仓惯例，同 exp1 的 ref_joint_pos 2.4→0.0）；
+            # 归零后 _prepare_reward_function 整项移除，_pitch_lpf 状态仍更新但不进梯度（无害）。
+            # exp2.1 目的：确立"仅撤销 k 0.25→0.1"这一纯减法配置的长程稳定性基线。
+            torso_pitch_lpf = 0.0
             feet_rotation = 0.3
             base_height = 0.2
             base_acc = 0.2
