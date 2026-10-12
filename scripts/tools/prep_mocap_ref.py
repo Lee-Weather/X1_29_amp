@@ -4,7 +4,7 @@
 
 流程（对应 czy/plan/plan.md Step1）：
   ① 重排   gmr dof_names → Isaac Gym 序（从 MJCF hinge 序读取，与 env [DOF] 表一致）
-  ② 翻转   FLIP_JOINTS 6 关节取反（右肩 p/r/y + 右肘 p/y + 右踝 pitch，数值搜索实证 0.3mm）
+  ② 翻转   FLIP_JOINTS 取反（当前为空：URDF 已按真机约定修正，见该常量注释）
   ③ FK校验 重排+翻转后与 gmr body_positions 对拍（首/中/尾帧，<5mm 通过）
   ④ 周期   左髋 pitch 自相关求 T_gait；锚点 = mocap 左髋 vs -sin(2πt/T) 互相关最大相位
            （与 env stance_mask 语义对齐：sin>=0 左支撑、左摆动在 sin<0 半周期）
@@ -29,11 +29,11 @@ GMR_DIR = os.path.join(ROOT, "resources/x1_gmr")
 MJCF = os.path.join(ROOT, "resources/robots/x1/mjcf/x1_29dof_scene.xml")
 OUT = os.path.join(ROOT, "resources/motions/processed/ref_lib.pt")
 
-FLIP_JOINTS = [
-    "right_shoulder_pitch_joint", "right_shoulder_roll_joint",
-    "right_shoulder_yaw_joint", "right_elbow_pitch_joint",
-    "right_elbow_yaw_joint", "right_ankle_pitch_joint",
-]
+# 2026-10-12：URDF 已按真机约定（czy/diff/gmr_x1_assets/x1.xml）修正右臂/右踝
+# 6 关节的轴与 range，重定向数据（本就出自真机约定）不再需要翻转 → 清空。
+# 历史：此前必须翻转这 6 关节，把 GMR 真机约定搬进旧 URDF 的相反约定——
+# 而部署侧没有做同样的翻转，这正是真机上右踝/右肘等 6 关节反向的根因。
+FLIP_JOINTS = []
 
 # 方案 A 切段表：段名 → (源文件, 起始稳态秒, 端部余量秒)
 GYM_SEG = {
@@ -221,7 +221,7 @@ def main():
         qlo, qhi = model.jnt_range[rows, 0], model.jnt_range[rows, 1]
         n_clipped = int(((q50 < qlo[None, :]) | (q50 > qhi[None, :])).sum())
         q50 = np.clip(q50, qlo[None, :], qhi[None, :])
-        print(f"  ⑤clip: {n_clipped} 值超限已裁剪（限位经 exp0.2 修复：右肩roll/右肘pitch 已镜像）")
+        print(f"  ⑤clip: {n_clipped} 值超限已裁剪")
 
         # loop 缝检查（50Hz 首尾差，detrend 后应≈0）
         gap = np.abs(q50[0] - q50[-1]).max()

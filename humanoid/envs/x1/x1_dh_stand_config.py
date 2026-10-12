@@ -68,7 +68,9 @@ class X1DHStandCfg(LeggedRobotCfg):
 
     class asset(LeggedRobotCfg.asset):
         # exp0：29DOF 全身 URDF（Isaac Gym dof 序：左腿0-5/腰6-8/左臂9-15/右臂16-22/右腿23-28，env 按名索引腿部）
-        # 右踝 pitch 轴 (0 0 -1)@rpy(π,0,0)，与左踝世界轴反平行（原版 physically_mirrored 约定，exp0 验证）
+        # 2026-10-12：右臂/右踝 6 关节（shoulder p/r/y、elbow p/y、ankle pitch）轴已改为
+        # 与真机约定一致（世界轴对齐 czy/diff/gmr_x1_assets/x1.xml）；旧 URDF 与之相反，
+        # 导致真机上这些关节反向。改动后 ref_lib 需用 prep_mocap_ref.py 重导、并从头训练。
         file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/x1/urdf/X1_29DOF_physically_mirrored.urdf'
         xml_file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/x1/mjcf/xyber_x1_flat.xml'
 
@@ -140,7 +142,7 @@ class X1DHStandCfg(LeggedRobotCfg):
         pos = [0.0, 0.0, 0.7]
 
         default_joint_angles = {  # = target angles [rad] when action = 0.0
-            # ---- 腿部（沿用 legacy exp1.5；右踝 pitch 反号：29DOF PM 轴与左踝世界轴反平行）----
+            # ---- 腿部（沿用 legacy exp1.5）----
             'left_hip_pitch_joint': 0.4,
             'left_hip_roll_joint': 0.05,
             'left_hip_yaw_joint': -0.31,
@@ -151,17 +153,19 @@ class X1DHStandCfg(LeggedRobotCfg):
             'right_hip_roll_joint': -0.05,
             'right_hip_yaw_joint': 0.31,
             'right_knee_pitch_joint': 0.49,
-            'right_ankle_pitch_joint': 0.21,
+            'right_ankle_pitch_joint': -0.21,
             'right_ankle_roll_joint': 0.0,
-            # ---- 上半身（amp CSV 均值左右对称化；符号约定回放目视校验）----
+            # ---- 上半身（amp CSV 均值左右对称化）----
             'lumbar_yaw_joint': 0.0,
             'lumbar_roll_joint': 0.0,
             'lumbar_pitch_joint': 0.03,
-            'left_shoulder_pitch_joint': 0.03,  'right_shoulder_pitch_joint': 0.03,
-            'left_shoulder_roll_joint': -0.06,  'right_shoulder_roll_joint': 0.06,
-            'left_shoulder_yaw_joint': 0.18,    'right_shoulder_yaw_joint': 0.18,
-            # 右肩roll/右肘pitch：URDF 轴镜像但原 limit 未配套，exp0.2 修复 limit 后 default 同步镜像取反
-            'left_elbow_pitch_joint': 0.34,     'right_elbow_pitch_joint': -0.34,
+            # 2026-10-12：URDF 右臂/右踝 6 关节轴已按真机约定修正（世界轴对齐
+            # czy/diff/gmr_x1_assets/x1.xml），同一物理姿态的数值整体取反 →
+            # 右侧 default 相应取反，真机反向问题由此消除（见 exp2.1 记录）。
+            'left_shoulder_pitch_joint': 0.03,  'right_shoulder_pitch_joint': -0.03,
+            'left_shoulder_roll_joint': -0.06,  'right_shoulder_roll_joint': -0.06,
+            'left_shoulder_yaw_joint': 0.18,    'right_shoulder_yaw_joint': -0.18,
+            'left_elbow_pitch_joint': 0.34,     'right_elbow_pitch_joint': 0.34,
             'left_elbow_yaw_joint': 0.0,        'right_elbow_yaw_joint': 0.0,
             'left_wrist_pitch_joint': 0.0,      'right_wrist_pitch_joint': 0.0,
             'left_wrist_roll_joint': 0.0,       'right_wrist_roll_joint': 0.0,
@@ -385,8 +389,8 @@ class X1DHStandCfg(LeggedRobotCfg):
 
         # final_swing_joint_pos = final_swing_joint_delta_pos + default_pos
         # 12 元素按腿部顺序（env 的 leg_dof_names 解析索引；上半身不参与步态摆动，保持默认位姿）
-        # 索引 10 = right_ankle_pitch：29DOF PM 轴 (0 0 -1) 与左踝世界轴反平行，摆幅反号（exp0 验证）
-        final_swing_joint_delta_pos = [0.25, 0.05, -0.11, 0.35, -0.16, 0.0, -0.25, -0.05, 0.11, 0.35, 0.16, 0.0]
+        # 索引 10 = right_ankle_pitch：2026-10-12 轴已对齐真机约定，摆幅随之取反（原 +0.16）
+        final_swing_joint_delta_pos = [0.25, 0.05, -0.11, 0.35, -0.16, 0.0, -0.25, -0.05, 0.11, 0.35, -0.16, 0.0]
         target_feet_height = 0.03
         target_feet_height_max = 0.10  # exp1.9: 0.06→0.10 扩窗——foot_height 目标峰 0.08，
                                        # 旧上限 0.06 下"抬到位反而丢 feet_clearance 分"自相矛盾
