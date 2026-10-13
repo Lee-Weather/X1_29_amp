@@ -595,7 +595,11 @@ class X1DHStandCfgPPO(LeggedRobotCfgPPO):
                                        # 100 → 上限 1.0/步，梯度 0.5·(1-D)·1.0 与 task O(1) 同量级；
                                        # 乘 dt 保留（控制频率解耦）。robolab task O(0.8) 无此问题
                                        # 本地对照（64env×60iter）：ep_len/reward 与 1.5 完全一致（无破坏），style 0.001→0.055
-        amp_task_lerp = 0.6             # 融合 = 0.6·task + 0.4·style（站立 env 纯 task 不融合）
+        amp_task_lerp = 0.5             # 融合 = 0.5·task + 0.5·style（站立 env 纯 task 不融合）
+                                       # exp2.4b: 0.6→0.5——exp2.3 scratch 6000 轮内 style 从 0.138 倒退到
+                                       # 0.064（ep_len 升→agent 样本变多→D 变强→task 挤压 style 无反向力）。
+                                       # 0.5/0.5 为 MimicKit/AMP 论文默认配比；无量纲比值不动 exp1.2 量纲标定。
+                                       # 注意：lerp 变更后总 reward 与 0.6 基线**不可直接对比**（构造性下降 ~15）
         # exp1.5: style 负斜坡下界——rew = max(1-(D-1)²/4, eps·(D+1))。D∈(-1,1) 与旧公式
         # 逐点一致（量纲零扰动）；D<-1 旧 clamp 平顶梯度为 0（D 过冲时 policy 失联），
         # 负斜坡保证任何 D 值梯度不断流且越负越罚。定位：保险丝（exp1.3 死锁值 -0.994
