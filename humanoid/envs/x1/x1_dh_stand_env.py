@@ -274,6 +274,8 @@ class X1DHStandEnv(LeggedRobot):
                 resample_command = getattr(self, name)
                 # resample_command stands for _resample_stand_command/_resample_walk_sagittal_command/...
                 resample_command(env_ids)
+                # exp2.4c: 换指令段时刷新航向参考（新的"直线段"从此刻朝向起算）
+                self._yaw_ref[env_ids] = self.base_euler_xyz[env_ids, 2]
 
     def _resample_stand_command(self, env_ids):
         self.commands[env_ids, 0] = torch.zeros(len(env_ids), device=self.device)
@@ -668,6 +670,8 @@ class X1DHStandEnv(LeggedRobot):
         # exp2.0: 躯干俯仰 EMA 复位为**复位后的当前姿态**（勿置 0——否则上一 episode 的后仰
         # 会在新 episode 开头被"记着"，产生跨 episode 泄漏）；base_euler_xyz 已在上方刷新
         self._pitch_lpf[env_ids] = self.base_euler_xyz[env_ids, 1]
+        # exp2.4c: 航向参考复位（同款防跨 episode 泄漏——出生朝向即为本段零点）
+        self._yaw_ref[env_ids] = self.base_euler_xyz[env_ids, 2]
         
     
     def _init_buffers(self):
@@ -681,6 +685,8 @@ class X1DHStandEnv(LeggedRobot):
         self._gait_phase = torch.zeros(self.num_envs, device=self.device)  # exp1.7: 相位积分（自适应步频路径）
         # exp2.0: "持续后仰"约束的 EMA 状态（低通后的躯干俯仰，见 _reward_torso_pitch_lpf）
         self._pitch_lpf = torch.zeros(self.num_envs, device=self.device)
+        # exp2.4c: 航向参考（yaw_drift_angle 的零点——reset/指令重采样时刷新，见 _resample_commands）
+        self._yaw_ref = torch.zeros(self.num_envs, device=self.device)
 
         # 29DOF 支持：腿部 dof 索引按关节名解析，不依赖 URDF 关节顺序
         # （12DOF URDF 下解析结果即 0-11，行为与旧硬编码完全等价）
@@ -1224,6 +1230,17 @@ class X1DHStandEnv(LeggedRobot):
         # 转向指令段豁免以避免与 tracking_ang_vel 冲突
         no_yaw_cmd = (torch.abs(self.commands[:, 2]) <= 0.05).float()
         return torch.abs(self.base_ang_vel[:, 2]) * no_yaw_cmd
+
+    def _reward_yaw_drift_angle(self):
+        # exp2.4c: 罚**累积偏航角**而非角速度——yaw_drift(|wz|) 对净漂移失明：
+        # 摆动 wz±0.3 交替（净零）与持续 +0.3（5s 漂 1.1rad，exp2.3 0.4 档实测）同罚。
+        # 误差 = 当前 yaw − 指令段起点 yaw（_yaw_ref，reset/换段刷新，无跨段污染），
+        # atan2(sin,cos) 环绕差。exp 核尺度 2.0：err=0.2→0.67，err=0.5→0.37，err=1.1→0.11。
+        # 原 yaw_drift(-1.2) 保留——它管摆动幅度，此项管净漂移，职责不重叠。
+        no_yaw_cmd = (torch.abs(self.commands[:, 2]) <= 0.05).float()
+        diff = self.base_euler_xyz[:, 2] - self._yaw_ref
+        err = torch.abs(torch.atan2(torch.sin(diff), torch.cos(diff)))
+        return torch.exp(-err * 2.0) * no_yaw_cmd
 
     def _reward_track_vel_hard(self):
         """

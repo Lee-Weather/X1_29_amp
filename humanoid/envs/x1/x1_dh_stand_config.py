@@ -490,6 +490,9 @@ class X1DHStandCfg(LeggedRobotCfg):
             # lateral
             lat_vel = -2.0        # legacy exp1.1: -1.2->-2.0 加压（exp1 净漂 -0.10/-0.12 未压住）
             yaw_drift = -1.2      # exp1.7: -0.8→-1.2 加压（exp1.6 回放 0.6 m/s 段 yaw 累积漂移；步频自适应后漂移源应减弱，此为兜底）
+            yaw_drift_angle = 0.5 # exp2.4c: 罚净偏航角 exp(-2·|yaw-yaw_ref|)，无转向指令段生效。
+                                  # 依据：yaw_drift(|wz|) 加压两轮(0.8→1.2)仍漏净漂移——exp2.3 0.4 档
+                                  # 5s 漂 1.12rad+侧漂 0.78m；角度项补"净漂移"盲区，摆动幅度仍归 yaw_drift 管
             # contact 
             feet_contact_forces = -0.01
             # vel tracking
