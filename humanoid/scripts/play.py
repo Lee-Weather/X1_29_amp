@@ -327,7 +327,7 @@ def play(args):
                             "base_ang_vel_x", "base_ang_vel_y", "base_ang_vel_z",
                             "base_vel_x", "base_vel_y", "base_vel_z",
                             "base_height", "base_pos_x", "base_pos_y", "base_yaw",
-                            "foot_z_l", "foot_z_r", "foot_force_l", "foot_force_r",
+                            "foot_z_l", "foot_z_r", "foot_x_l", "foot_y_l", "foot_x_r", "foot_y_r", "foot_force_l", "foot_force_r",
                             "command_x"]}
     for jn in dof_names:
         for q in ["action", "pos", "vel", "effort", "pos_des_raw"]:
@@ -420,6 +420,10 @@ def play(args):
         diag["base_yaw"].append(base_yaw.item())
         diag["foot_z_l"].append(env.rigid_state[robot_index, left_foot_idx, 2].item())
         diag["foot_z_r"].append(env.rigid_state[robot_index, right_foot_idx, 2].item())
+        diag["foot_x_l"].append(env.rigid_state[robot_index, left_foot_idx, 0].item())
+        diag["foot_y_l"].append(env.rigid_state[robot_index, left_foot_idx, 1].item())
+        diag["foot_x_r"].append(env.rigid_state[robot_index, right_foot_idx, 0].item())
+        diag["foot_y_r"].append(env.rigid_state[robot_index, right_foot_idx, 1].item())
         diag["foot_force_l"].append(env.contact_forces[robot_index, left_foot_idx, 2].item())
         diag["foot_force_r"].append(env.contact_forces[robot_index, right_foot_idx, 2].item())
         # 逐关节：策略输出（缩放前）、位置、速度、实际力矩、期望位置（lagged action + default）
@@ -605,7 +609,7 @@ def play(args):
                  "base_ang_vel_x", "base_ang_vel_y", "base_ang_vel_z",
                  "base_vel_x", "base_vel_y", "base_vel_z",
                  "base_height", "base_pos_x", "base_pos_y", "base_yaw",
-                 "foot_z_l", "foot_z_r", "foot_force_l", "foot_force_r", "command_x", "clip_count"]
+                 "foot_z_l", "foot_z_r", "foot_x_l", "foot_y_l", "foot_x_r", "foot_y_r", "foot_force_l", "foot_force_r", "command_x", "clip_count"]
     joint_cols = [f"{q}_{jn}_joint" for jn in dof_names for q in ["action", "pos", "vel", "effort", "pos_des_raw"]]
     header = base_cols + joint_cols
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
