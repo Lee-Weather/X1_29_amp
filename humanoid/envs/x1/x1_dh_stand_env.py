@@ -601,6 +601,10 @@ class X1DHStandEnv(LeggedRobot):
 
         # reset base position
         self._reset_root_states(env_ids)
+
+        # exp2.6: 占空比 EMA 复位（出生双支撑，防跨 episode 泄漏）
+        self._duty_l[env_ids] = 1.0
+        self._duty_r[env_ids] = 1.0
         
         # Randomize joint parameters, like torque gain friction ...
         self.randomize_dof_props(env_ids)
@@ -681,6 +685,10 @@ class X1DHStandEnv(LeggedRobot):
         self._gait_phase = torch.zeros(self.num_envs, device=self.device)  # exp1.7: 相位积分（自适应步频路径）
         # exp2.0: "持续后仰"约束的 EMA 状态（低通后的躯干俯仰，见 _reward_torso_pitch_lpf）
         self._pitch_lpf = torch.zeros(self.num_envs, device=self.device)
+        # exp2.6: 左右脚触地占空比 EMA（α=0.01 ≈ τ=1s@100Hz，覆盖 0.8Hz 完整步态周期）——跛行惩罚状态量
+        self._duty_ema_alpha = 0.01
+        self._duty_l = torch.ones(self.num_envs, device=self.device)   # 出生双支撑 = 1
+        self._duty_r = torch.ones(self.num_envs, device=self.device)
 
         # 29DOF 支持：腿部 dof 索引按关节名解析，不依赖 URDF 关节顺序
         # （12DOF URDF 下解析结果即 0-11，行为与旧硬编码完全等价）
@@ -905,6 +913,11 @@ class X1DHStandEnv(LeggedRobot):
         if getattr(self, "amp_enabled", False):
             self._sample_amp()
         super().post_physics_step()
+        # exp2.6: 触地占空比 EMA 更新——置于 super() 后（contact_forces 已刷新；
+        # 复位 env 已被 reset_idx 拉回 1.0，此处残留旧接触值的影响 O(α)=0.01 可忽略）
+        contact = self.contact_forces[:, self.feet_indices, 2] > 5.   # 与 feet_contact_number 同阈值
+        self._duty_l += self._duty_ema_alpha * (contact[:, 0].float() - self._duty_l)
+        self._duty_r += self._duty_ema_alpha * (contact[:, 1].float() - self._duty_r)
 
     def _sample_amp(self):
         self.gym.refresh_actor_root_state_tensor(self.sim)
@@ -1059,6 +1072,13 @@ class X1DHStandEnv(LeggedRobot):
         # 贴地净收益归零，真实交替全匹配 2/步
         reward = torch.where(contact == stance_mask, 1, -1.0)
         return torch.mean(reward, dim=1)
+
+    def _reward_gait_symmetry(self):
+        """exp2.6: 罚左右触地占空比差——跛行（一腿支撑一腿碎步）的可观测本质是占空比失衡。
+        EMA(τ≈1s) 跨步态周期平滑，不干扰单步内的正常交替；无偏航指令时生效（转弯允许不对称）。
+        """
+        no_yaw_cmd = (torch.abs(self.commands[:, 2]) <= 0.05).float()
+        return -torch.abs(self._duty_l - self._duty_r) * no_yaw_cmd
 
     def _reward_hip_ref(self):
         """exp1.8: 左右髋 pitch 对查表 ref 的专项跟踪——交替波形 2 维直锚。

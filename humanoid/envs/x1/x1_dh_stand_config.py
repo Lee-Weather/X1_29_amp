@@ -485,6 +485,7 @@ class X1DHStandCfg(LeggedRobotCfg):
                                   # 落点进支撑多边形兼是防摔稳定器（exp1.11 修正：8~10s/摔为第一瓶颈）
             foot_slip = -0.25     # exp1.7: -0.1→-0.25 加压（滑行=脚在地面拖，触地脚水平速度惩罚翻倍以上；再升有滑步硬惩罚风险，见 §17 止损）
             feet_distance = 0.2   # exp0.3: 0.3→0.2 回退（exp0.2 证实带来 vx 过冲副作用，收益不明显）
+            gait_symmetry = -0.5  # exp2.6: 左右触地占空比差罚（治跛行；基点 26998 实测 0.6 段步数比 5:2、右髋 roll 代偿 1.64x）
             knee_distance = 0.2
             feet_contact_number = 2.4  # legacy exp1.3: 2.0→2.4 强化左右步节拍对称（治偏航离散累积）
             # lateral
