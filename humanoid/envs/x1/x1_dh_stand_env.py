@@ -1076,9 +1076,11 @@ class X1DHStandEnv(LeggedRobot):
     def _reward_gait_symmetry(self):
         """exp2.6: 罚左右触地占空比差——跛行（一腿支撑一腿碎步）的可观测本质是占空比失衡。
         EMA(τ≈1s) 跨步态周期平滑，不干扰单步内的正常交替；无偏航指令时生效（转弯允许不对称）。
+        返回正量级，配合负权重 -0.5（本库惩罚惯例；r1 版误返回 -|diff| 与负权重相乘
+        变成奖励不对称，TASK_20261015_020 全程 rew_gait_symmetry>0 且递增，判无效）。
         """
         no_yaw_cmd = (torch.abs(self.commands[:, 2]) <= 0.05).float()
-        return -torch.abs(self._duty_l - self._duty_r) * no_yaw_cmd
+        return torch.abs(self._duty_l - self._duty_r) * no_yaw_cmd
 
     def _reward_hip_ref(self):
         """exp1.8: 左右髋 pitch 对查表 ref 的专项跟踪——交替波形 2 维直锚。
