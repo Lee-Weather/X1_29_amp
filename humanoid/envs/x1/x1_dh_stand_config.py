@@ -490,6 +490,7 @@ class X1DHStandCfg(LeggedRobotCfg):
             # lateral
             lat_vel = -2.0        # legacy exp1.1: -1.2->-2.0 加压（exp1 净漂 -0.10/-0.12 未压住）
             yaw_drift = -1.2      # exp1.7: -0.8→-1.2 加压（exp1.6 回放 0.6 m/s 段 yaw 累积漂移；步频自适应后漂移源应减弱，此为兜底）
+            yaw_drift_lin = -0.5  # exp2.7: 线性不饱和角度罚（治航向吹出：26998 基点回放 +132° 弧线；|wz| 罚对 10°/s 慢漂免费、exp 核大误差饱和，双防线均失守）
             # contact 
             feet_contact_forces = -0.01
             # vel tracking

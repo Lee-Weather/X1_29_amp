@@ -274,6 +274,8 @@ class X1DHStandEnv(LeggedRobot):
                 resample_command = getattr(self, name)
                 # resample_command stands for _resample_stand_command/_resample_walk_sagittal_command/...
                 resample_command(env_ids)
+                # exp2.7: 换指令段时刷新航向参考（新的"直线段"从此刻朝向起算）
+                self._yaw_ref[env_ids] = self.base_euler_xyz[env_ids, 2]
 
     def _resample_stand_command(self, env_ids):
         self.commands[env_ids, 0] = torch.zeros(len(env_ids), device=self.device)
@@ -601,6 +603,9 @@ class X1DHStandEnv(LeggedRobot):
 
         # reset base position
         self._reset_root_states(env_ids)
+
+        # exp2.7: 航向参考复位（出生朝向即本段零点，防跨 episode 泄漏）
+        self._yaw_ref[env_ids] = self.base_euler_xyz[env_ids, 2]
         
         # Randomize joint parameters, like torque gain friction ...
         self.randomize_dof_props(env_ids)
@@ -681,6 +686,8 @@ class X1DHStandEnv(LeggedRobot):
         self._gait_phase = torch.zeros(self.num_envs, device=self.device)  # exp1.7: 相位积分（自适应步频路径）
         # exp2.0: "持续后仰"约束的 EMA 状态（低通后的躯干俯仰，见 _reward_torso_pitch_lpf）
         self._pitch_lpf = torch.zeros(self.num_envs, device=self.device)
+        # exp2.7: 航向参考（yaw_drift_lin 的零点——reset/换指令段时刷新）
+        self._yaw_ref = torch.zeros(self.num_envs, device=self.device)
 
         # 29DOF 支持：腿部 dof 索引按关节名解析，不依赖 URDF 关节顺序
         # （12DOF URDF 下解析结果即 0-11，行为与旧硬编码完全等价）
@@ -1059,6 +1066,17 @@ class X1DHStandEnv(LeggedRobot):
         # 贴地净收益归零，真实交替全匹配 2/步
         reward = torch.where(contact == stance_mask, 1, -1.0)
         return torch.mean(reward, dim=1)
+
+    def _reward_yaw_drift_lin(self):
+        """exp2.7: 线性不饱和航向角罚。返回正量级×负权重（惩罚惯例，r1 血训）。
+        与 yaw_drift(|wz|,-1.2) 职责正交：它管步态摆动的 ±wz 幅度，此项管净漂移累积——
+        角度罚对摆动天然免疫（±wz 不积累净角度），权重可开足不伤交替；
+        线性核大误差梯度恒定（2.4c 的 exp 核 err>1.5rad 饱和失守的根治）。
+        误差 = 当前 yaw − 指令段起点 yaw（_yaw_ref，reset/换段刷新）。"""
+        no_yaw_cmd = (torch.abs(self.commands[:, 2]) <= 0.05).float()
+        diff = self.base_euler_xyz[:, 2] - self._yaw_ref
+        err = torch.abs(torch.atan2(torch.sin(diff), torch.cos(diff)))
+        return err * no_yaw_cmd
 
     def _reward_hip_ref(self):
         """exp1.8: 左右髋 pitch 对查表 ref 的专项跟踪——交替波形 2 维直锚。
