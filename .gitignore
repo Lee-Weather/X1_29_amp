@@ -8,6 +8,7 @@ logs/
 czy/data/
 czy/real_data/
 czy/diff/
+czy/gmr/
 *.log
 *.pt
 *.mp4

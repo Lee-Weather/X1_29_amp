@@ -89,9 +89,16 @@ def load_motion(path):
     root_rot = np.asarray(m["root_rot"], dtype=np.float64)
     dof_pos = np.asarray(m["dof_pos"], dtype=np.float64)
     if "dof_names" in m:
-        fmt = "gmr"
+        # Normalized slow_walk_amp_v1.2 clips already use this robot's physical
+        # joint convention. Legacy x1_gmr clips still need the right-side flip.
+        fmt = "gmr_native" if m.get("joint_signs_changed") is False else "gmr"
         root_rot = root_rot[:, [3, 0, 1, 2]]  # xyzw -> wxyz
         dof_names = list(m["dof_names"])
+    elif "link_body_list" in m:
+        # GMR 输出的 MJCF hinge 序（无 dof_names，dof 列顺序 == 模型 hinge 序）
+        fmt = "hinge"
+        root_rot = root_rot[:, [3, 0, 1, 2]]  # xyzw -> wxyz
+        dof_names = None                      # 由 main 按模型 hinge 序填充
     else:
         fmt = "lab"
         dof_names = list(LAB_DOF_ORDER)
@@ -111,7 +118,7 @@ def remap_dof(model, dof_pos, dof_names, joint_names):
 def verify_against_stored(model, data, motion, qpos, fmt):
     """Sanity-check conventions vs stored FK truth (if present)."""
     names_truth = None
-    if fmt == "gmr" and "body_positions" in motion:
+    if fmt in ("gmr", "gmr_native") and "body_positions" in motion:
         truth = np.asarray(motion["body_positions"])       # (T,30,3)
         names_truth = list(motion["body_names"])
     elif fmt == "lab" and "key_body_pos" in motion:
@@ -182,6 +189,8 @@ def record_video(model, data, qpos, fps, out_path, width=640, height=360):
     for t in range(n):
         data.qpos[:] = qpos[t]
         mujoco.mj_forward(model, data)
+        # 相机跟随 root 水平位置，避免长距离行走走出画面
+        cam.lookat[:] = [qpos[t, 0], qpos[t, 1], 0.6]
         rend.update_scene(data, camera=cam)
         img = rend.render()
         imageio.imwrite(os.path.join(tmpdir, f"f{t:06d}.png"), img)
@@ -223,7 +232,18 @@ def main():
     path = motion[0]
 
     fps, root_pos, root_rot, dof_pos, dof_names, fmt, m = load_motion(path)
-    qpos = build_qpos(model, root_pos, root_rot, dof_pos, dof_names, flip=not args.no_flip)
+    if fmt == "hinge":
+        # 该格式轴约定已与当前模型一致：dof 列即模型 hinge 序，且无需右半身翻转
+        dof_names = [n for n in (model.joint(i).name for i in range(model.njnt))
+                     if n != FREEJOINT_NAME]
+        flip = False
+    elif fmt == "gmr_native":
+        # Canonicalized clips carry explicit dof_names and already match the
+        # current physically mirrored MJCF, so do not apply the legacy GMR flip.
+        flip = False
+    else:
+        flip = not args.no_flip
+    qpos = build_qpos(model, root_pos, root_rot, dof_pos, dof_names, flip=flip)
     verify_against_stored(model, data, m, qpos, fmt)
 
     print(f"\nmotion : {os.path.relpath(path, ROOT)}  [{fmt}]")

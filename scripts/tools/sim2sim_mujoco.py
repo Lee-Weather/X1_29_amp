@@ -31,7 +31,6 @@ import re
 import numpy as np
 import torch
 import mujoco
-import onnxruntime as ort
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEFAULT_XML = os.path.join(REPO, "czy/mujoco/mjcf/x1_29dof_scene.xml")   # raw+地板（URDF 修复同步版）
@@ -203,6 +202,10 @@ def main():
                     help="obs 加训练同款噪声（noise_level=1.5）")
     ap.add_argument("--lag", type=int, default=20, help="统一滞后（物理步）：action 与 dof obs")
     ap.add_argument("--lag_act", type=int, default=None, help="单独覆盖 action 滞后")
+    ap.add_argument("--jit", default=None,
+                    help="torch.jit 策略（ExportedDH 6468 输入；替代 --onnx，用于无 onnxruntime 环境）")
+    ap.add_argument("--record", default=None, metavar="MP4", help="离屏渲染录像（跟踪相机，需 MUJOCO_GL glfw + xvfb）")
+    ap.add_argument("--render_every", type=int, default=2, help="每 N 控制步渲染一帧（N=2 → 50fps）")
     args = ap.parse_args()
 
     replay_rows = None
@@ -216,8 +219,30 @@ def main():
 
     model = build_model(args.xml)
     data = mujoco.MjData(model)
-    sess = ort.InferenceSession(args.onnx, providers=["CPUExecutionProvider"])
-    inp = sess.get_inputs()[0].name
+    sess, inp, jit_policy = None, None, None
+    if args.jit:
+        jit_policy = torch.jit.load(args.jit).eval()
+        print(f"[POLICY] torch.jit from {args.jit}")
+    else:
+        import onnxruntime as ort
+        sess = ort.InferenceSession(args.onnx, providers=["CPUExecutionProvider"])
+        inp = sess.get_inputs()[0].name
+
+    def run_policy(flat):
+        if jit_policy is not None:
+            with torch.no_grad():
+                return jit_policy(torch.from_numpy(flat)).numpy()[0].astype(np.float32)
+        return sess.run(None, {inp: flat})[0][0].astype(np.float32)
+
+    renderer = writer = cam = None
+    if args.record:
+        import imageio.v2 as imageio
+        renderer = mujoco.Renderer(model, height=360, width=480)
+        renderer.scene.flags = renderer.scene.flags & (0xFF ^ int(mujoco.mjtRndFlag.mjRND_SHADOW))  # 软渲染提速
+        writer = imageio.get_writer(args.record, fps=int(100 / args.render_every),
+                                    quality=8, macro_block_size=1)
+        cam = mujoco.MjvCamera()
+        print(f"[RECORD] -> {args.record}")
 
     # ---- 关节序映射 & 默认角 ----
     mj_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j)
@@ -301,7 +326,7 @@ def main():
             action = np.array([float(replay_rows[step][f'action_{n}'])
                                for n in isaac_dofs], dtype=np.float32)
         else:
-            action = sess.run(None, {inp: hist.reshape(1, -1)})[0][0].astype(np.float32)
+            action = run_policy(hist.reshape(1, -1))
         if not np.isfinite(action).all():
             print(f"[NaN] step={step} t={step*CTRL_DT:.3f}s action 非有限 |obs|max={np.nanmax(np.abs(obs))} "
                   f"z={data.qpos[2]:.3f} |qvel|max={np.abs(data.qvel[isaac2mjv]).max():.1f} "
@@ -321,6 +346,12 @@ def main():
                 data.ctrl[a] = ctrl_now[i]
             mujoco.mj_step(model, data)
 
+        if renderer is not None and step % args.render_every == 0:
+            cam.lookat[:] = [data.qpos[0], data.qpos[1], data.qpos[2] - 0.2]
+            cam.distance, cam.azimuth, cam.elevation = 3.2, 130.0, -15.0
+            renderer.update_scene(data, camera=cam)
+            writer.append_data(renderer.render())
+
         # 诊断记录
         v_world = data.qvel[0:3]
         v_body = R @ v_world
@@ -335,6 +366,10 @@ def main():
         w.writerow(["time_s", "cmd_linear_x", "pos_x", "pos_y", "pos_z",
                     "roll", "pitch", "yaw", "vfwd_body", "vlat_body", "base_height"])
         w.writerows(rows)
+
+    if writer is not None:
+        writer.close()
+        print("[RECORD] done")
 
     # ---- Summary（与 isaac 回放同口径）----
     print(f"\nSaved {csv_path}")
