@@ -11,6 +11,8 @@ czy/diff/
 czy/gmr/
 *.log
 *.pt
+!resources/motions/processed/ref_lib_v1_2_phase.pt
+!resources/motions/processed/amp_v1_2.pt
 *.mp4
 *.mpg
 *.avi

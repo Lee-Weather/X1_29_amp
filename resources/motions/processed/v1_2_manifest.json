@@ -1,0 +1,58 @@
+{
+  "walk_forward": {
+    "source": "F1_B3_continuous_walk",
+    "fps": 50.0,
+    "autocorr_period_frames": [
+      62,
+      62,
+      62,
+      62
+    ],
+    "selected_cycle": [
+      113,
+      176
+    ],
+    "gait_period_s": 1.26,
+    "selected_cycle_speed_mps": 0.6183962240311103,
+    "phase_anchor_frame": 44,
+    "foot_phase_correlation": 0.9819413647503412,
+    "pose_seam_rms_rad_before_correction": 0.015664835900878367,
+    "velocity_seam_rms_rad_per_frame": 0.004774008761223179,
+    "loop_max_jump_rad": 0.10017257645016625,
+    "native_max_step_rad": 0.11969112900514445,
+    "amp_interval": [
+      20,
+      371
+    ],
+    "values_clipped": 78,
+    "max_excess_rad": 0.02860061451792717
+  },
+  "walk_backward": {
+    "source": "F1_B4_walk_backwards",
+    "fps": 50.0,
+    "autocorr_period_frames": [
+      70,
+      73,
+      72,
+      72
+    ],
+    "selected_cycle": [
+      284,
+      357
+    ],
+    "gait_period_s": 1.46,
+    "selected_cycle_speed_mps": 0.4308529988118728,
+    "phase_anchor_frame": 46,
+    "foot_phase_correlation": 0.9592554431682146,
+    "pose_seam_rms_rad_before_correction": 0.046428067858791416,
+    "velocity_seam_rms_rad_per_frame": 0.005395786543181766,
+    "loop_max_jump_rad": 0.03688649037112923,
+    "native_max_step_rad": 0.08204108231688201,
+    "amp_interval": [
+      100,
+      367
+    ],
+    "values_clipped": 59,
+    "max_excess_rad": 0.010632272958755518
+  }
+}
