@@ -1,0 +1,37 @@
+{
+  "taskBaseInfo": {
+    "projectId": "PRO_20261020_011",
+    "taskType": "1",
+    "trainType": "2",
+    "taskName": "exp3.1a-resume085-6000-r2",
+    "taskDescription": "exp3.1 corrections; 4096 envs; seed 5; 6000 additional iterations; inherit 085 model_6000 actor/critic/estimator/AMP, reset optimizers; target cumulative 12000.",
+    "taskTag": [
+      "exp3.1a",
+      "v1.2",
+      "6000"
+    ],
+    "goodsId": "ESKU000001",
+    "goodsBackId": "SKUSL000002",
+    "gpuNum": 1,
+    "imageId": "BJX00000001",
+    "imageVersion": "V000412",
+    "personalDataPath": ""
+  },
+  "taskCodeInfo": {
+    "codeType": "2",
+    "codeUrl": "[{\"codeUrl\": \"https://github.com/Lee-Weather/X1_29_amp\", \"versionType\": \"1\", \"versionName\": \"codex/exp3-1-ab\"}]",
+    "mainCodeUri": "X1_29_amp/humanoid/scripts/train.py",
+    "hparamsPath": "X1_29_amp/humanoid/envs/x1/x1_dh_stand_v12_exp31_config.py",
+    "isOpen": "1",
+    "checkPointFilePath": "upload/2026/10/19/model_6000_20261019193744A240.pt",
+    "checkPointMountPath": "X1_29_amp/",
+    "resumeFromTaskId": "TASK_20261019_085",
+    "resumeFromTaskName": "exp3.0-v12-b3-b4-account6-rerun",
+    "resumeFromCheckPoint": "6000",
+    "startScript": "gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand_v12_exp31 --headless --num_envs=4096 --seed=5 --max_iterations=6000 --run_name=exp3_1a --ckpt_path=X1_29_amp/model_6000.pt"
+  },
+  "runtimeReminderConfig": {
+    "enableRuntimeReminder": false,
+    "reminderDurations": []
+  }
+}

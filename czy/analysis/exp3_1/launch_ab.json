@@ -1,0 +1,81 @@
+{
+  "a": {
+    "experiment": "exp3.1a",
+    "account_index": 5,
+    "user_id": 4574,
+    "email_mask": "lim...thpuxcawxn@maxxspace.com",
+    "goods_id": "ESKU000001",
+    "goods_back_id": "SKUSL000002",
+    "hourly_price": 5.4,
+    "image_id": "BJX00000001",
+    "image_version": "V000412",
+    "source_task": "TASK_20261019_085",
+    "source_name": "exp3.0-v12-b3-b4-account6-rerun",
+    "source_iteration": 6000,
+    "source_model": "model_6000.pt",
+    "source_object": "upload/2026/10/19/model_6000_20261019193744A240.pt",
+    "commit": "e3033b3cd6f7ede4c70c9e1ef0e8730bf0bf696b",
+    "branch": "codex/exp3-1-ab",
+    "project_id": "PRO_20261020_011",
+    "status": "3",
+    "start_time": "2026-10-20 14:00:55",
+    "failed_attempts": [
+      {
+        "taskId": "TASK_20261020_070",
+        "taskStatus": "6",
+        "startTime": "2026-10-20 13:57:06",
+        "endTime": "2026-10-20 13:58:39",
+        "commit": "fd1f97680946faabb233c3c4c9854b227cbb2e41",
+        "reason": "episode logger KeyError on empty episode entries"
+      }
+    ],
+    "attempt": 2,
+    "task_id": "TASK_20261020_072",
+    "first_iteration": 6000,
+    "latest_iteration": 6041,
+    "target_iteration": 12000,
+    "checkpoint_loaded": true,
+    "mean_reward": 40.47,
+    "mean_episode_length": 879.36,
+    "eta_seconds": 10685.0,
+    "startup_error_lines": [],
+    "checked_at": "2026-10-20T14:03:43+08:00"
+  },
+  "b": {
+    "experiment": "exp3.1b",
+    "account_index": 7,
+    "user_id": 4565,
+    "email_mask": "lim...njtlno3gsm@maxxspace.com",
+    "goods_id": "ESKU000001",
+    "goods_back_id": "SKUSL000002",
+    "hourly_price": 5.4,
+    "image_id": "BJX00000001",
+    "image_version": "V000412",
+    "commit": "e3033b3cd6f7ede4c70c9e1ef0e8730bf0bf696b",
+    "branch": "codex/exp3-1-ab",
+    "project_id": "PRO_20261020_012",
+    "status": "3",
+    "start_time": "2026-10-20 14:01:05",
+    "failed_attempts": [
+      {
+        "taskId": "TASK_20261020_071",
+        "taskStatus": "6",
+        "startTime": "2026-10-20 13:57:15",
+        "endTime": "2026-10-20 13:58:37",
+        "commit": "fd1f97680946faabb233c3c4c9854b227cbb2e41",
+        "reason": "episode logger KeyError on empty episode entries"
+      }
+    ],
+    "attempt": 2,
+    "task_id": "TASK_20261020_073",
+    "startup_error_lines": [],
+    "checked_at": "2026-10-20T14:03:49+08:00",
+    "first_iteration": 0,
+    "latest_iteration": 16,
+    "target_iteration": 6000,
+    "checkpoint_loaded": false,
+    "mean_reward": -1.55,
+    "mean_episode_length": 139.73,
+    "eta_seconds": 15852.7
+  }
+}

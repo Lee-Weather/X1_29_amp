@@ -1,0 +1,32 @@
+{
+  "taskBaseInfo": {
+    "projectId": "PRO_20261020_012",
+    "taskType": "1",
+    "trainType": "1",
+    "taskName": "exp3.1b-fresh-6000-r2",
+    "taskDescription": "exp3.1 corrections; 4096 envs; seed 5; 6000 additional iterations; initialize all networks and optimizers from scratch; target 6000.",
+    "taskTag": [
+      "exp3.1b",
+      "v1.2",
+      "6000"
+    ],
+    "goodsId": "ESKU000001",
+    "goodsBackId": "SKUSL000002",
+    "gpuNum": 1,
+    "imageId": "BJX00000001",
+    "imageVersion": "V000412",
+    "personalDataPath": ""
+  },
+  "taskCodeInfo": {
+    "codeType": "2",
+    "codeUrl": "[{\"codeUrl\": \"https://github.com/Lee-Weather/X1_29_amp\", \"versionType\": \"1\", \"versionName\": \"codex/exp3-1-ab\"}]",
+    "mainCodeUri": "X1_29_amp/humanoid/scripts/train.py",
+    "hparamsPath": "X1_29_amp/humanoid/envs/x1/x1_dh_stand_v12_exp31_config.py",
+    "isOpen": "1",
+    "startScript": "gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand_v12_exp31 --headless --num_envs=4096 --seed=5 --max_iterations=6000 --run_name=exp3_1b"
+  },
+  "runtimeReminderConfig": {
+    "enableRuntimeReminder": false,
+    "reminderDurations": []
+  }
+}
