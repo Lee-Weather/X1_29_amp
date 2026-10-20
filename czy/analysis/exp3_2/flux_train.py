@@ -17,7 +17,7 @@ TASK = "x1_dh_stand_v12_exp32"
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("prepare", "create", "run", "status", "clear-storage"))
+    parser.add_argument("action", choices=("prepare", "create", "run", "status", "clear-storage", "note"))
     parser.add_argument("--account-index", type=int, default=8)
     args = parser.parse_args()
     os.chdir(ROOT)
@@ -146,6 +146,27 @@ def main():
         raise RuntimeError("unexpected start arguments")
     if "--ckpt_path" in script or "--resume" in script or code.get("checkPointFilePath"):
         raise RuntimeError("fresh training unexpectedly restores a checkpoint")
+    if args.action == "note":
+        note = ("<h3>exp3.2: reachable targets and stable sagittal walking</h3>"
+                "<p>Fresh actor/critic/estimator/AMP and optimizer state. 6000 updates, 4096 envs, seed 5. "
+                "v1.2 B3/B4 demos 1:1; no B1/B2. "
+                "PD targets constrained after lag and motor offset; reference-compatible soft margins. "
+                "Signed speed scale 8, foot height 0.25, AMP scale 5/task lerp 0.5, startup direction gate 0.2. "
+                "Grouped phase reference Huber and orientation/height/episode-heading costs; "
+                "physical failure task -30, walking fused -15.</p>"
+                "<p>Training commit: " + record["commit"] + "; branch: " + record["branch"] + ". "
+                "Account pool entry 9 verified as userId 4566. 1x4090D, V000412.</p>"
+                "<p>Final exp3.1 baselines: a=12000 nominal 0 resets but forward not executed; "
+                "b=6000 nominal 4 resets. Full randomization: a 2 / b 4 resets. "
+                "Baseline artifacts and full local experiment note: czy/exp1/exp3.md, czy/analysis/exp3_2/.</p>"
+                "<p>Startup verified: first iteration 0; latest sampled iteration " + str(record.get("latest_iteration"))
+                + "/6000. Early reward/episode values do not establish gait performance.</p>")
+        invoke("task", "note", "update", "--task-id", record["task_id"], "--note", note, dry=True)
+        invoke("task", "note", "update", "--task-id", record["task_id"], "--note", note)
+        record["note_updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+        save()
+        print("NOTE_UPDATED", record["task_id"])
+        return
     if args.action == "clear-storage":
         if str(base["taskStatus"]) != "0":
             raise RuntimeError("storage repair requires an unstarted task")
@@ -171,6 +192,8 @@ def main():
                 match = re.search(re.escape(label) + r":\s*([-+\d.eE]+)", summary)
                 if match:
                     record[key] = float(match[1])
+            record["latest_exp32_metrics"] = {name: float(value) for name, value in re.findall(
+                r"Mean episode exp32_([a-z_]+):\s*([-+\d.eE]+)", summary)}
             labels = ("Learning iteration", "Computation:", "Mean reward:", "Mean episode length:", "AMP raw/used", "Task/style contribution:", "AMP direction gate:", "ETA:")
             print("\n".join(line.strip() for line in summary.splitlines() if any(label in line for label in labels)), flush=True)
         else:
@@ -179,6 +202,12 @@ def main():
         record.update(startup_error_lines=errors, exp32_configuration_logged=record.get("exp32_configuration_logged", False) or "[EXP3.2]" in clean)
         if errors:
             print("ERRORS", errors, flush=True)
+        models = rows(invoke("task", "model", "list", "--task-id", record["task_id"], "--page", "1", "--limit", "20"))
+        checkpoints = [m for m in models if re.fullmatch(r"model_\d+\.pt", m.get("fileName", ""))]
+        if checkpoints:
+            latest = max(checkpoints, key=lambda item: int(item["checkpoint"]))
+            record["latest_checkpoint"] = {k: latest.get(k) for k in ("fileName", "checkpoint", "createTime")}
+            print("LATEST_CHECKPOINT", record["latest_checkpoint"], flush=True)
     record.update(status=base["taskStatus"], start_time=base.get("startTime"), end_time=base.get("endTime"),
                   checked_at=datetime.now().astimezone().isoformat(timespec="seconds"))
     save()

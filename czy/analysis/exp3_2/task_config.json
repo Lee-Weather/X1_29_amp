@@ -1,0 +1,32 @@
+{
+  "taskBaseInfo": {
+    "projectId": "PRO_20261020_029",
+    "taskType": "1",
+    "trainType": "1",
+    "taskName": "exp3.2-fresh-reachable-stable-6000",
+    "taskDescription": "exp3.2 P0: constrained PD targets, phase group Huber, stability costs, startup AMP gate; fresh all networks 6000 updates.",
+    "taskTag": [
+      "exp3.2",
+      "v1.2",
+      "6000"
+    ],
+    "goodsId": "ESKU000001",
+    "goodsBackId": "SKUSL000002",
+    "gpuNum": 1,
+    "imageId": "BJX00000001",
+    "imageVersion": "V000412",
+    "personalDataPath": ""
+  },
+  "taskCodeInfo": {
+    "codeType": "2",
+    "codeUrl": "[{\"codeUrl\": \"https://github.com/Lee-Weather/X1_29_amp\", \"versionType\": \"1\", \"versionName\": \"codex/exp3-2\"}]",
+    "mainCodeUri": "X1_29_amp/humanoid/scripts/train.py",
+    "hparamsPath": "X1_29_amp/humanoid/envs/x1/x1_dh_stand_v12_exp32_config.py",
+    "startScript": "gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand_v12_exp32 --headless --num_envs=4096 --seed=5 --max_iterations=6000 --run_name=exp3_2",
+    "isOpen": "1"
+  },
+  "runtimeReminderConfig": {
+    "enableRuntimeReminder": false,
+    "reminderDurations": []
+  }
+}

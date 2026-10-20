@@ -17,7 +17,7 @@
     "commit": "e3033b3cd6f7ede4c70c9e1ef0e8730bf0bf696b",
     "branch": "codex/exp3-1-ab",
     "project_id": "PRO_20261020_011",
-    "status": "3",
+    "status": "5",
     "start_time": "2026-10-20 14:00:55",
     "failed_attempts": [
       {
@@ -32,14 +32,15 @@
     "attempt": 2,
     "task_id": "TASK_20261020_072",
     "first_iteration": 6000,
-    "latest_iteration": 6041,
+    "latest_iteration": 11999,
     "target_iteration": 12000,
     "checkpoint_loaded": true,
-    "mean_reward": 40.47,
-    "mean_episode_length": 879.36,
-    "eta_seconds": 10685.0,
+    "mean_reward": 105.03,
+    "mean_episode_length": 1920.82,
+    "eta_seconds": 0.0,
     "startup_error_lines": [],
-    "checked_at": "2026-10-20T14:03:43+08:00"
+    "checked_at": "2026-10-20T17:56:43+08:00",
+    "observed_log_first_iteration": 11925
   },
   "b": {
     "experiment": "exp3.1b",
@@ -54,7 +55,7 @@
     "commit": "e3033b3cd6f7ede4c70c9e1ef0e8730bf0bf696b",
     "branch": "codex/exp3-1-ab",
     "project_id": "PRO_20261020_012",
-    "status": "3",
+    "status": "5",
     "start_time": "2026-10-20 14:01:05",
     "failed_attempts": [
       {
@@ -69,13 +70,14 @@
     "attempt": 2,
     "task_id": "TASK_20261020_073",
     "startup_error_lines": [],
-    "checked_at": "2026-10-20T14:03:49+08:00",
+    "checked_at": "2026-10-20T17:56:49+08:00",
     "first_iteration": 0,
-    "latest_iteration": 16,
+    "latest_iteration": 5999,
     "target_iteration": 6000,
     "checkpoint_loaded": false,
-    "mean_reward": -1.55,
-    "mean_episode_length": 139.73,
-    "eta_seconds": 15852.7
+    "mean_reward": 35.8,
+    "mean_episode_length": 701.16,
+    "eta_seconds": 0.0,
+    "observed_log_first_iteration": 5925
   }
 }

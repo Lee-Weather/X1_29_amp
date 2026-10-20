@@ -35,4 +35,3 @@ class X1DHStandV12Exp32CfgPPO(X1DHStandV12Exp31CfgPPO):
         run_name = "exp3_2_reachable_stable"
         resume = False
         max_iterations = 6000
-

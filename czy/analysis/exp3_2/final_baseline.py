@@ -4,6 +4,7 @@ from datetime import datetime
 import importlib.util
 import json
 from pathlib import Path
+import shlex
 import subprocess
 import tarfile
 
@@ -58,8 +59,12 @@ def main():
         subprocess.run(["ssh", "-o", "BatchMode=yes", "robot@10.12.201.5", command], check=True)
     elif args.action == "status":
         remote = json.loads(manifest_path.read_text())["server_root"]
+        code = ("import json; from pathlib import Path; root=Path(" + repr(remote) + "); "
+                "d=json.loads((root/'replay_summary.json').read_text()); "
+                "print(json.dumps({'finished':d['finished'],'cases':{k:{'success':v['success'],'returncode':v['returncode']} for k,v in d['cases'].items()}})); "
+                "print((root/'replay_batch.log').read_text().splitlines()[-1])")
         subprocess.run(["ssh", "-o", "BatchMode=yes", "robot@10.12.201.5",
-                        "tail -n 12 " + remote + "/replay_batch.log"], check=True)
+                        "python3 -c " + shlex.quote(code)], check=True)
     else:
         collector = module(OLD / "collect_and_analyze.py", "collector")
         collector.ROOT, collector.HERE = ROOT, HERE

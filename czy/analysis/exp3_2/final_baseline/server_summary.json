@@ -1,0 +1,221 @@
+{
+  "cases": {
+    "a_nominal_no_push": {
+      "model": "model_12000.pt",
+      "mode": "nominal_no_push",
+      "seed": 123145,
+      "returncode": 0,
+      "run_name": "exp31a_12000_nominal_no_push_175114",
+      "log": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/replay_logs/a_nominal_no_push.log",
+      "success": true,
+      "directory": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/replay_results/a_nominal_no_push",
+      "metadata": {
+        "task": "x1_dh_stand_v12_exp31",
+        "eval_mode": "nominal_no_push",
+        "seed": 123145,
+        "control_dt": 0.01,
+        "physics_dt": 0.001,
+        "video_fps": 50.0,
+        "profile": [
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            0.4
+          ],
+          [
+            500,
+            0.6
+          ],
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            -0.2
+          ],
+          [
+            500,
+            0.0
+          ]
+        ],
+        "steps": 3000,
+        "checkpoint": null,
+        "load_run": null,
+        "checkpoint_path": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/models/a/model_12000.pt",
+        "resets": 0,
+        "timeouts": 0,
+        "success": true,
+        "torque_clip_count": 0,
+        "pushes": false,
+        "noise": false
+      }
+    },
+    "b_nominal_no_push": {
+      "model": "model_6000.pt",
+      "mode": "nominal_no_push",
+      "seed": 123145,
+      "returncode": 0,
+      "run_name": "exp31b_6000_nominal_no_push_175600",
+      "log": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/replay_logs/b_nominal_no_push.log",
+      "success": true,
+      "directory": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/replay_results/b_nominal_no_push",
+      "metadata": {
+        "task": "x1_dh_stand_v12_exp31",
+        "eval_mode": "nominal_no_push",
+        "seed": 123145,
+        "control_dt": 0.01,
+        "physics_dt": 0.001,
+        "video_fps": 50.0,
+        "profile": [
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            0.4
+          ],
+          [
+            500,
+            0.6
+          ],
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            -0.2
+          ],
+          [
+            500,
+            0.0
+          ]
+        ],
+        "steps": 3000,
+        "checkpoint": null,
+        "load_run": null,
+        "checkpoint_path": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/models/b/model_6000.pt",
+        "resets": 4,
+        "timeouts": 0,
+        "success": false,
+        "torque_clip_count": 1487,
+        "pushes": false,
+        "noise": false
+      }
+    },
+    "a_randomized_no_push": {
+      "model": "model_12000.pt",
+      "mode": "randomized_no_push",
+      "seed": 123145,
+      "returncode": 0,
+      "run_name": "exp31a_12000_randomized_no_push_180102",
+      "log": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/replay_logs/a_randomized_no_push.log",
+      "success": true,
+      "directory": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/replay_results/a_randomized_no_push",
+      "metadata": {
+        "task": "x1_dh_stand_v12_exp31",
+        "eval_mode": "randomized_no_push",
+        "seed": 123145,
+        "control_dt": 0.01,
+        "physics_dt": 0.001,
+        "video_fps": 50.0,
+        "profile": [
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            0.4
+          ],
+          [
+            500,
+            0.6
+          ],
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            -0.2
+          ],
+          [
+            500,
+            0.0
+          ]
+        ],
+        "steps": 3000,
+        "checkpoint": null,
+        "load_run": null,
+        "checkpoint_path": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/models/a/model_12000.pt",
+        "resets": 2,
+        "timeouts": 0,
+        "success": false,
+        "torque_clip_count": 13,
+        "pushes": false,
+        "noise": true
+      }
+    },
+    "b_randomized_no_push": {
+      "model": "model_6000.pt",
+      "mode": "randomized_no_push",
+      "seed": 123145,
+      "returncode": 0,
+      "run_name": "exp31b_6000_randomized_no_push_180548",
+      "log": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/replay_logs/b_randomized_no_push.log",
+      "success": true,
+      "directory": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/replay_results/b_randomized_no_push",
+      "metadata": {
+        "task": "x1_dh_stand_v12_exp31",
+        "eval_mode": "randomized_no_push",
+        "seed": 123145,
+        "control_dt": 0.01,
+        "physics_dt": 0.001,
+        "video_fps": 50.0,
+        "profile": [
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            0.4
+          ],
+          [
+            500,
+            0.6
+          ],
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            -0.2
+          ],
+          [
+            500,
+            0.0
+          ]
+        ],
+        "steps": 3000,
+        "checkpoint": null,
+        "load_run": null,
+        "checkpoint_path": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay/models/b/model_6000.pt",
+        "resets": 4,
+        "timeouts": 0,
+        "success": false,
+        "torque_clip_count": 1074,
+        "pushes": false,
+        "noise": true
+      }
+    }
+  },
+  "finished": true
+}

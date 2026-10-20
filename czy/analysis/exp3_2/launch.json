@@ -7,5 +7,40 @@
   "goods_back_id": "SKUSL000002",
   "hourly_price": 5.4,
   "image_id": "BJX00000001",
-  "image_version": "V000412"
+  "image_version": "V000412",
+  "project_id": "PRO_20261020_029",
+  "commit": "47aa052daa9131743d36cd7098aa1919f8b98c4e",
+  "branch": "codex/exp3-2",
+  "task_id": "TASK_20261020_144",
+  "status": "3",
+  "startup_error_lines": [],
+  "exp32_configuration_logged": true,
+  "start_time": "2026-10-20 17:59:35",
+  "end_time": null,
+  "checked_at": "2026-10-20T18:11:31+08:00",
+  "first_observed_iteration": 0,
+  "latest_iteration": 247,
+  "target_iteration": 6000,
+  "mean_reward": -42.89,
+  "mean_episode_length": 311.06,
+  "eta_seconds": 13918.7,
+  "latest_exp32_metrics": {
+    "failure_backward_fraction": 0.2474,
+    "failure_contact_fraction": 0.0,
+    "failure_forward_fraction": 0.3134,
+    "failure_height_fraction": 0.8718,
+    "failure_pitch_fraction": 0.1282,
+    "failure_roll_fraction": 0.0,
+    "pd_target_clip_fraction": 0.1849,
+    "ref_lateral_cost_walk": 0.5803,
+    "ref_sagittal_cost_walk": 0.361,
+    "ref_upper_cost_walk": 0.1195,
+    "walk_step_fraction": 0.4791
+  },
+  "latest_checkpoint": {
+    "fileName": "model_200.pt",
+    "checkpoint": "200",
+    "createTime": "2026-10-20 18:09:43"
+  },
+  "note_updated_at": "2026-10-20T18:10:20+08:00"
 }

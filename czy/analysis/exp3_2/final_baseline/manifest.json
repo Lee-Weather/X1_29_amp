@@ -41,5 +41,12 @@
       "bytes": 23350814,
       "sha256": "bea9c691e642286263797e3075700874f06eb05786c5c010a0640d6c4661d819"
     }
-  }
+  },
+  "collected_cases": [
+    "a_nominal_no_push",
+    "b_nominal_no_push",
+    "a_randomized_no_push",
+    "b_randomized_no_push"
+  ],
+  "all_replays_finished": true
 }

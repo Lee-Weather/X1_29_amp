@@ -134,7 +134,11 @@ CSV 的 `pos_des_raw` 是最后一个物理子步的延迟后目标、尚未加�
 
 - 已切换并用服务端 whoami 核对第 9 个账号，userId=4566，脱敏邮箱 `lim...29ym@maxxspace.com`。不使用此前 085/3.1a、3.1b 所用账号，也不使用已耗尽的 094 账号。
 - 平台实时仅返回 4090D，`ESKU000001/SKUSL000002`、1 GPU、¥5.4/小时；镜像 `BJX00000001/V000412` 仍可用。账号池名义预算不等于服务端实时余额，最终以任务启动结果确认能否计费。
-- 已下载最终 a=12000 / b=6000，SHA256 写入 `final_baseline/manifest.json`，按原训练提交和四例原协议在 201.5 补回放。首次启动缺 conda PATH 导致 Ninja 不可见，按 post-201-5 规范初始化 F1 后重启；不是模型加载错误。
-- 正式任务 ID、代码 SHA 和启动日志以 `launch.json`、`task_config.json` 为准；启动后补充笔记。
+- 已下载最终 a=12000 / b=6000，SHA256 写入 `final_baseline/manifest.json`，在 201.5 按原训练提交补齐四例回放，全部产物已取回。名义/随机域终止：a 为 0/2 次、b 为 4/4 次，仍未通过。首次启动缺 conda PATH 导致 Ninja 不可见，按 post-201-5 规范初始化 F1 后重启；不是模型加载错误。
+- 正式任务 ID、代码 SHA 和启动日志以 `launch.json`、`task_config.json` 为准；本地实验笔记及云任务 HTML 笔记均已更新。
 
 本次未新增或执行测试套件；已执行的是既有 CSV/参考数据离线审计，以及旧实验最终模型的授权回放。
+
+### 已启动云训练
+
+`TASK_20261020_144`，项目 `PRO_20261020_029`，userId=4566，平台开始时间 2026-10-20 17:59:35；GitHub/GitLab 训练算法提交均为 `47aa052daa9131743d36cd7098aa1919f8b98c4e`，分支 `codex/exp3-2`。已确认首轮 0/6000、新配置标识、真实 PPO 更新和初始 checkpoint 上传；没有恢复 checkpoint。最新运行采样及诊断在 `launch.json`，日志在被 Git 忽略的 `startup.log`。不将初始化期的 episode、负 reward 与旧成熟策略直接比较。
