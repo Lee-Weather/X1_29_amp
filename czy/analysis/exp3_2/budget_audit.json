@@ -1,0 +1,227 @@
+{
+  "meaning": "Fixed old trajectories, exp3.2 reward re-score; not new-policy performance.",
+  "walking_terminal_fused_reward": -15,
+  "gamma": 0.994,
+  "cases": {
+    "a_nominal": {
+      "walk_task_rate_mean": -2.4473740102259036,
+      "p95_negative_fused_rate": 2.847722436844439,
+      "p95_constant_loss_discounted_bound": 4.746204061407394,
+      "joint_group_sizes": [
+        6,
+        6,
+        17
+      ],
+      "stages": [
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 11.304349462375317,
+          "pose_cost_rate": 0.13421199428200759
+        },
+        {
+          "command": 0.4,
+          "rows": 400,
+          "task_rate_mean": -3.0356519883157467,
+          "pose_cost_rate": 2.411271739197913
+        },
+        {
+          "command": 0.6,
+          "rows": 400,
+          "task_rate_mean": -4.989740404950112,
+          "pose_cost_rate": 2.555387955503851
+        },
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 10.513176686182145,
+          "pose_cost_rate": 0.3479111839419101
+        },
+        {
+          "command": -0.2,
+          "rows": 400,
+          "task_rate_mean": 0.7712124357451523,
+          "pose_cost_rate": 2.2560862040911185
+        },
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 8.657876211429759,
+          "pose_cost_rate": 0.26357226527223093
+        }
+      ]
+    },
+    "a_randomized": {
+      "walk_task_rate_mean": -2.734617633605279,
+      "p95_negative_fused_rate": 3.0069118052113755,
+      "p95_constant_loss_discounted_bound": 5.011519675352289,
+      "joint_group_sizes": [
+        6,
+        6,
+        17
+      ],
+      "stages": [
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 9.009506050943399,
+          "pose_cost_rate": 0.27656941870098023
+        },
+        {
+          "command": 0.4,
+          "rows": 400,
+          "task_rate_mean": -3.1027241295811514,
+          "pose_cost_rate": 2.573403770981727
+        },
+        {
+          "command": 0.6,
+          "rows": 250,
+          "task_rate_mean": -4.433522562695392,
+          "pose_cost_rate": 2.8095473024236317
+        },
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 8.997168812208672,
+          "pose_cost_rate": 0.19823723333441648
+        },
+        {
+          "command": -0.2,
+          "rows": 400,
+          "task_rate_mean": -1.6782964794767548,
+          "pose_cost_rate": 2.1469140240260525
+        },
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 4.177440173335381,
+          "pose_cost_rate": 0.2759336557306041
+        }
+      ]
+    },
+    "b_nominal": {
+      "walk_task_rate_mean": 0.03683743316284997,
+      "p95_negative_fused_rate": 2.7196836242992317,
+      "p95_constant_loss_discounted_bound": 4.532806040498716,
+      "joint_group_sizes": [
+        6,
+        6,
+        17
+      ],
+      "stages": [
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 7.806937477425195,
+          "pose_cost_rate": 0.6024605412184916
+        },
+        {
+          "command": 0.4,
+          "rows": 132,
+          "task_rate_mean": -0.35607613224629864,
+          "pose_cost_rate": 1.945987067849257
+        },
+        {
+          "command": 0.6,
+          "rows": 151,
+          "task_rate_mean": -1.5866897476688988,
+          "pose_cost_rate": 1.6531669872905623
+        },
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 7.937108951993348,
+          "pose_cost_rate": 0.5779142292474472
+        },
+        {
+          "command": -0.2,
+          "rows": 249,
+          "task_rate_mean": 0.2993445173660904,
+          "pose_cost_rate": 2.051055488894554
+        },
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 7.579436324138602,
+          "pose_cost_rate": 0.823286902150013
+        }
+      ]
+    },
+    "b_randomized": {
+      "walk_task_rate_mean": -1.6321851582392728,
+      "p95_negative_fused_rate": 6.063309256060225,
+      "p95_constant_loss_discounted_bound": 10.105515426767033,
+      "joint_group_sizes": [
+        6,
+        6,
+        17
+      ],
+      "stages": [
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 7.678125685641394,
+          "pose_cost_rate": 0.6741861189796503
+        },
+        {
+          "command": 0.4,
+          "rows": 121,
+          "task_rate_mean": 0.09039249271130033,
+          "pose_cost_rate": 2.0932141087826417
+        },
+        {
+          "command": 0.6,
+          "rows": 155,
+          "task_rate_mean": -1.1162359452096333,
+          "pose_cost_rate": 1.6720946088215771
+        },
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 7.16815873210496,
+          "pose_cost_rate": 0.7617290765496619
+        },
+        {
+          "command": -0.2,
+          "rows": 249,
+          "task_rate_mean": -4.598894121257568,
+          "pose_cost_rate": 2.4334466421506153
+        },
+        {
+          "command": 0.0,
+          "rows": 400,
+          "task_rate_mean": 7.651531850822221,
+          "pose_cost_rate": 1.18336850532824
+        }
+      ]
+    }
+  },
+  "reference": {
+    "walk_forward": {
+      "physical_limit_conflicts": [],
+      "fixed_2percent_margin_conflicts": [
+        "left_hip_roll_joint",
+        "left_knee_pitch_joint",
+        "left_ankle_pitch_joint",
+        "lumbar_pitch_joint",
+        "right_hip_roll_joint",
+        "right_knee_pitch_joint",
+        "right_ankle_pitch_joint"
+      ],
+      "root_height_min_m": 0.558771550655365,
+      "root_height_max_m": 0.5990872383117676
+    },
+    "walk_backward": {
+      "physical_limit_conflicts": [],
+      "fixed_2percent_margin_conflicts": [
+        "left_hip_roll_joint",
+        "left_knee_pitch_joint",
+        "left_ankle_pitch_joint",
+        "right_knee_pitch_joint",
+        "right_ankle_pitch_joint"
+      ],
+      "root_height_min_m": 0.5846357345581055,
+      "root_height_max_m": 0.608589768409729
+    }
+  }
+}

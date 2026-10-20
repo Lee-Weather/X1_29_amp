@@ -733,13 +733,14 @@ class LeggedRobot(BaseTask):
         else:
             p_gains = self.p_gains
             d_gains = self.d_gains
-            
+
+        position_error = self._pd_position_target() - self.dof_pos
         if self.cfg.domain_rand.randomize_coulomb_friction:
-            torques = p_gains * (self.lagged_actions_scaled + self.default_dof_pos - self.dof_pos + self.motor_offsets) -\
+            torques = p_gains * position_error -\
             d_gains * self.dof_vel -\
             self.randomized_joint_viscous * self.dof_vel - self.randomized_joint_coulomb * torch.sign(self.dof_vel)
         else: 
-            torques = p_gains * (self.lagged_actions_scaled + self.default_dof_pos - self.dof_pos + self.motor_offsets) - d_gains * self.dof_vel
+            torques = p_gains * position_error - d_gains * self.dof_vel
 
         if self.cfg.domain_rand.randomize_torque:
             motor_strength_ranges = self.cfg.domain_rand.torque_multiplier_range
@@ -747,6 +748,10 @@ class LeggedRobot(BaseTask):
             torques *= self.torque_multi
             
         return torch.clip(torques, -self.torque_limits, self.torque_limits)
+
+    def _pd_position_target(self):
+        """Position target after action lag and motor calibration offset."""
+        return self.lagged_actions_scaled + self.default_dof_pos + self.motor_offsets
 
     
     def _reset_dofs(self, env_ids):

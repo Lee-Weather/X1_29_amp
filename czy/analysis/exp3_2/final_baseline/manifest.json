@@ -1,0 +1,45 @@
+{
+  "run": "20261020_174658",
+  "source_commit": "e3033b3cd6f7ede4c70c9e1ef0e8730bf0bf696b",
+  "seed": 123145,
+  "profile": [
+    0.0,
+    0.4,
+    0.6,
+    0.0,
+    -0.2,
+    0.0
+  ],
+  "stage_seconds": 5.0,
+  "server_root": "/home/robot/czy/exp1/exp_20261020_174658/x1_exp31_replay",
+  "experiments": {
+    "a": {
+      "task_id": "TASK_20261020_072",
+      "status_at_download": "5",
+      "account_index": 5,
+      "user_id": 4574,
+      "model": "model_12000.pt",
+      "checkpoint": 12000,
+      "iteration_offset": 6000,
+      "model_created_at": "2026-10-20 17:13:34",
+      "downloaded_at": "2026-10-20T17:47:09.444845+08:00",
+      "local_source": "E:\\X1\\AMP\\logs\\exp32_baseline_20261020_174658\\models\\a\\model_12000.pt",
+      "bytes": 23350978,
+      "sha256": "64da05bcc84c5bbf4382c80219ed5910c86ac5a8c60b3aa9c8b29976c3dda8a2"
+    },
+    "b": {
+      "task_id": "TASK_20261020_073",
+      "status_at_download": "5",
+      "account_index": 7,
+      "user_id": 4565,
+      "model": "model_6000.pt",
+      "checkpoint": 6000,
+      "iteration_offset": 0,
+      "model_created_at": "2026-10-20 17:39:10",
+      "downloaded_at": "2026-10-20T17:47:20.248641+08:00",
+      "local_source": "E:\\X1\\AMP\\logs\\exp32_baseline_20261020_174658\\models\\b\\model_6000.pt",
+      "bytes": 23350814,
+      "sha256": "bea9c691e642286263797e3075700874f06eb05786c5c010a0640d6c4661d819"
+    }
+  }
+}

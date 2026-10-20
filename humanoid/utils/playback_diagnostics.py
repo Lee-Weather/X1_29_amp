@@ -75,6 +75,14 @@ def capture_playback_step(env, infos, rewards, dones, algorithm, requested, stag
     for name in ("action_lag", "dof_lag"):
         if name in saved:
             row[name + "_substeps"] = scalar(saved[name])
+    if "pd_target_effective" in saved:
+        row["pd_target_clip_joint_substeps"] = int(saved["pd_target_clip_counts"][robot].sum().item())
+        row["heading_reference"] = scalar(saved["heading_reference"])
+        for index, name in enumerate(env.dof_names):
+            for prefix in ("pd_target_raw", "pd_target_effective", "pd_target_clip_counts"):
+                row[prefix + "_" + name] = scalar(saved[prefix][:, index])
+        for index, name in enumerate(("lateral", "sagittal", "upper")):
+            row["ref_group_cost_" + name] = scalar(saved["ref_group_costs"][:, index])
     row.update(task_before_clip=scalar(saved.get("task_before_clip", rewards)),
                task_after_clip=scalar(saved.get("task_after_clip", rewards)), task_reward=scalar(rewards))
     for name, value in saved.get("components", {}).items():
