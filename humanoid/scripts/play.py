@@ -42,6 +42,8 @@ from humanoid import LEGGED_GYM_ROOT_DIR
 # import isaacgym
 from humanoid.envs import *
 from humanoid.utils import  get_args, export_policy_as_jit, task_registry, Logger
+from humanoid.utils.evaluation import inject_evaluation_command
+from humanoid.utils.playback_diagnostics import capture_playback_step
 from isaacgym.torch_utils import *
 
 import torch
@@ -55,24 +57,35 @@ x_vel_cmd, y_vel_cmd, yaw_vel_cmd = 0.0, 0.0, 0.0
 joystick_use = True
 joystick_opened = False
 
-# =========== 速度阶梯（50Hz 控制步数, command_x [m/s]）：0→0.4→0.6→0 ===========
+# =========== 速度阶梯（控制步数, command_x [m/s]）：0→0.4→0.6→0→-0.2→0 ===========
 VEL_PROFILE = [
-    (500, 0.0),   # 站立 10s
-    (500, 0.4),   # 中速前进 0.4 m/s 10s
-    (500, 0.6),   # 快速前进 0.6 m/s 10s
-    (500, 0.0),   # 减速停止 10s
+    (500, 0.0),   # 站立
+    (500, 0.4),   # 中速前进 0.4 m/s
+    (500, 0.6),   # 快速前进 0.6 m/s
+    (500, 0.0),   # 减速停止
+    (500, -0.2),  # 后退 0.2 m/s
+    (500, 0.0),   # 回到站立
 ]
 TOTAL_PLAY_STEPS = sum(steps for steps, _ in VEL_PROFILE)
 
 
-def current_command(step_idx):
+def current_command(step_idx, profile=None):
     """返回控制步 step_idx 对应的 command_x。"""
     acc = 0
-    for steps, vel in VEL_PROFILE:
+    for steps, vel in (VEL_PROFILE if profile is None else profile):
         if step_idx < acc + steps:
             return vel
         acc += steps
     return 0.0
+
+
+def current_stage(step_idx, profile):
+    end = 0
+    for index, (steps, _) in enumerate(profile):
+        end += steps
+        if step_idx < end:
+            return index
+    return len(profile) - 1
 # ==============================================================================
 
 if joystick_use:
@@ -106,115 +119,30 @@ if joystick_use:
 
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
-    # §21c: PLAY_MATCH_TRAIN=1（默认）→ 下方全部"回放 override"被撤销，改用训练域评估。
-    # 动机：play 的手工标定把动力学钉在一组固定值上（关闭全套随机化/噪声），策略被放到
-    # 与训练分布不一致的确定性动力学上评测——§21 的延迟坑（"关闭随机化"=钉最大值）同源。
-    # 先在覆盖前深拷贝训练域三项（覆盖是就地 mutate，引用快照无效）。
-    import copy as _copy
-    MATCH_TRAIN = os.environ.get("PLAY_MATCH_TRAIN", "1") != "0"
-    _train_domain_rand = _copy.deepcopy(env_cfg.domain_rand)
-    _train_noise = _copy.deepcopy(env_cfg.noise)
-    _train_terrain = _copy.deepcopy(env_cfg.terrain)
-    # override some parameters for testing
+    from humanoid.utils.evaluation import configure_evaluation
+    mode = args.eval_mode
+    if mode is None:
+        mode = "nominal_no_push" if getattr(env_cfg.rewards, "reference_pose_tracking", False) else (
+            "train" if os.environ.get("PLAY_MATCH_TRAIN", "1") != "0" else "nominal_no_push")
+    seed = args.seed if args.seed is not None else 123145
+    configure_evaluation(env_cfg, mode, seed)
+    train_cfg.seed = seed
     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 10)
-    # env_cfg.terrain.mesh_type = 'trimesh'
-    env_cfg.terrain.mesh_type = 'plane'
-    env_cfg.terrain.num_rows = 5
-    env_cfg.terrain.num_cols = 5
-    env_cfg.terrain.max_init_terrain_level = 5
-    env_cfg.env.episode_length_s = 1000
-    env_cfg.noise.add_noise = False
-    # headless 下保留 graphics device，供相机传感器离屏录制视频
     if RENDER:
         env_cfg.env.enable_headless_render = True
-    # 回放动力学保真：关闭随机化后，把 armature/damping 固定为训练用校准中心值
-    # （否则关节回退 URDF 默认 armature=0，有效惯量比训练时轻，策略在与训练不一致的动力学上被评测）
-    env_cfg.domain_rand.randomize_joint_armature = False   # 随机关闭，改用下方固定值
-    env_cfg.domain_rand.fixed_armature = {
-        'left_hip_pitch_joint': 0.16,  'right_hip_pitch_joint': 0.16,   # legacy exp1.5 [0.09,0.23] 对称中心
-        'left_hip_yaw_joint': 0.0105,  'right_hip_yaw_joint': 0.0105,   # legacy exp1.5 [0.003,0.018] 中心
-        'left_knee_pitch_joint': 0.25, 'right_knee_pitch_joint': 0.25,  # legacy exp1.5 [0.18,0.32] CORE 中心
-        # §21c: 踝 / 髋 roll 必须补全——旧版缺键 → 回退 URDF（无 armature 字段）+ asset.armature=0
-        # → 物理 armature=0，而训练范围踝 [0.003,0.04]、髋roll [0.0001,0.05]：0 在训练分布之外
-        # （踝等效惯量骤降 → PD 环带宽过高 → 落地吸不住前向动量 → 前倾前冲）。
-        # 现值 = 训练范围中心（踝 (0.003+0.04)/2=0.0215、髋roll (0.0001+0.05)/2≈0.025）。
-        'left_hip_roll_joint': 0.025,   'right_hip_roll_joint': 0.025,
-        'left_ankle_pitch_joint': 0.0215, 'right_ankle_pitch_joint': 0.0215,
-        'left_ankle_roll_joint': 0.0215,  'right_ankle_roll_joint': 0.0215,
-        # ---- 29DOF 上半身（exp0 [0.003,0.04] 覆盖随机化中心；12DOF 任务下多余键自动无效）----
-        'lumbar_yaw_joint': 0.0215,   'lumbar_roll_joint': 0.0215,   'lumbar_pitch_joint': 0.0215,
-        'left_shoulder_pitch_joint': 0.0215,  'right_shoulder_pitch_joint': 0.0215,
-        'left_shoulder_roll_joint': 0.0215,   'right_shoulder_roll_joint': 0.0215,
-        'left_shoulder_yaw_joint': 0.0215,    'right_shoulder_yaw_joint': 0.0215,
-        'left_elbow_pitch_joint': 0.0215,     'right_elbow_pitch_joint': 0.0215,
-        'left_elbow_yaw_joint': 0.0215,       'right_elbow_yaw_joint': 0.0215,
-        'left_wrist_pitch_joint': 0.0215,     'right_wrist_pitch_joint': 0.0215,
-        'left_wrist_roll_joint': 0.0215,      'right_wrist_roll_joint': 0.0215,
-    }
-    # §21c: 该字段是 PhysX 的**被动关节阻尼**，不是 PD 的 D 增益！旧版误填 control.damping
-    # （髋 3/膝 8/踝 1.5）→ 训练真实范围是 URDF damping=1.0 × U[0.3,1.5]（each_joint=False 单标量）
-    # = 0.3~1.5、中心 0.9 → 旧值 2~9x 越界（膝 8.0 vs 0.9 = 8.9x）→ 关节迟滞跟不上参考。
-    # 现值统一取训练中心 0.9（键集与 fixed_armature 相同 = 全 29 关节）。
-    env_cfg.domain_rand.fixed_joint_damping = {
-        n: 0.9 for n in env_cfg.domain_rand.fixed_armature
-    }
-    env_cfg.domain_rand.randomize_friction = False
-    env_cfg.domain_rand.push_robots = False 
-    env_cfg.domain_rand.continuous_push = False 
-    env_cfg.domain_rand.randomize_base_mass = False 
-    env_cfg.domain_rand.randomize_com = False 
-    env_cfg.domain_rand.randomize_gains = False 
-    env_cfg.domain_rand.randomize_torque = False 
-    env_cfg.domain_rand.randomize_link_mass = False 
-    env_cfg.domain_rand.randomize_motor_offset = False 
-    env_cfg.domain_rand.randomize_joint_friction = False
-    env_cfg.domain_rand.randomize_joint_damping = False
-    env_cfg.domain_rand.randomize_joint_armature = False
-    env_cfg.domain_rand.randomize_lag_timesteps = False
-    # ---- train/play 延迟对齐（exp1.12 排查 §21）----
-    # 陷阱：randomize_lag_timesteps=False 时 legged_robot.randomize_lag_props 的
-    # else 分支取 lag_timesteps_range[1]=40 控制步 → action 延迟被钉在 400ms
-    # （训练 [5,40] 均匀，中值 225ms，抽到 40 的概率仅 2.8%）；且
-    # randomize_dof_lag_timesteps 此前漏关，q/dq 观测延迟每次 reset 随机重抽
-    # [0,40] 步。修正：两路延迟都钉回训练分布中值。
-    env_cfg.domain_rand.lag_timesteps_range = [22, 22]       # action 延迟 ~训练中值 225ms
-    env_cfg.domain_rand.dof_lag_timesteps_range = [20, 20]   # q/dq 观测延迟 ~训练中值 200ms
-    env_cfg.domain_rand.randomize_dof_lag_timesteps = False  # 防 reset 重抽
-    env_cfg.noise.curriculum = False
-    env_cfg.commands.heading_command = False
-
-    # §21c: 撤销上面的域覆盖（保留 num_envs / episode_length_s / 延迟对齐）
-    if MATCH_TRAIN:
-        env_cfg.domain_rand = _train_domain_rand
-        env_cfg.noise = _train_noise
-        env_cfg.terrain = _train_terrain
-        print("[play] MATCH_TRAIN: 域已还原为训练配置 "
-              f"(terrain={env_cfg.terrain.mesh_type} {env_cfg.terrain.num_rows}x{env_cfg.terrain.num_cols}, "
-              f"add_noise={env_cfg.noise.add_noise}, "
-              f"friction_rand={env_cfg.domain_rand.randomize_friction}, "
-              f"joint_friction_rand={env_cfg.domain_rand.randomize_joint_friction}, "
-              f"armature_rand={env_cfg.domain_rand.randomize_joint_armature})")
-
-    # §21h: 摩擦定标开关——PLAY_FRICTION=<值> 把机器人 shape 摩擦钉到该值。
-    # 复用 randomize_friction 通道：friction_range=[f,f] 使 256 个桶全为 f（环境创建时抽样，
-    # 非逐 reset）；restitution_range=[0,0] 保持与名义模式（默认 0.0）一致，只变摩擦一项。
-    # 放在 MATCH_TRAIN 还原之后 → 两种模式都可叠加。地面摩擦恒 0.6（cfg.terrain，两边相同）。
     _play_friction = os.environ.get("PLAY_FRICTION")
     if _play_friction is not None:
-        _f = float(_play_friction)
         env_cfg.domain_rand.randomize_friction = True
-        env_cfg.domain_rand.friction_range = [_f, _f]
+        env_cfg.domain_rand.friction_range = [float(_play_friction)] * 2
         env_cfg.domain_rand.restitution_range = [0.0, 0.0]
-        print(f"[play] PLAY_FRICTION={_f}: 机器人 shape 摩擦钉值（restitution 钉 0，地面仍 0.6）")
-
-    train_cfg.seed = 123145
-    print("train_cfg.runner_class_name:", train_cfg.runner_class_name)
+    print("[play] eval_mode={}, seed={}, pushes={}, noise={}".format(
+        mode, seed, env_cfg.domain_rand.push_robots, env_cfg.noise.add_noise))
 
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
 
 
-    if RENDER:
+    if RENDER and env.viewer is not None:
         # 仅录制模式需要相机视角（set_camera 依赖 viewer，headless 下不可调用）
         env.set_camera(env_cfg.viewer.pos, env_cfg.viewer.lookat)
 
@@ -257,10 +185,17 @@ def play(args):
         export_policy_as_jit(ppo_runner.alg.actor_critic, path)
         print('Exported policy as jit script to: ', path)
 
-    logger = Logger(env_cfg.sim.dt * env_cfg.control.decimation)
+    dt = env_cfg.sim.dt * env_cfg.control.decimation
+    video_fps = 1.0 / (2 * dt)
+    profile = VEL_PROFILE
+    if args.play_speed is not None:
+        if not math.isfinite(args.play_speed) or not math.isfinite(args.play_duration) or args.play_duration <= 0:
+            raise ValueError("playback speed must be finite and duration must be positive")
+        profile = [(max(1, round(args.play_duration / dt)), args.play_speed)]
+    total_play_steps = sum(steps for steps, _ in profile)
+    run_name_str = args.run_name if args.run_name is not None else "test"
+    logger = Logger(dt)
     robot_index = 0 # which robot is used for logging
-    joint_index = 5 # which joint is used for logging
-    stop_state_log = 1000 # number of steps before plotting states
     if RENDER:
         camera_properties = gymapi.CameraProperties()
         camera_properties.width = 1920
@@ -293,8 +228,10 @@ def play(args):
             os.makedirs(custom_save_path, exist_ok=True)
 
         print(f"Recording video to: {video_filepath}")
-        # 每隔 1 个控制步写 1 帧（实际 25fps），故 fps 标 25 保证 1:1 真实速度
-        video = cv2.VideoWriter(video_filepath, fourcc, 25.0, (1920, 1080))
+        # One recorded frame per two control steps.
+        video = cv2.VideoWriter(video_filepath, fourcc, video_fps, (1920, 1080))
+        if not video.isOpened():
+            raise RuntimeError("cannot open video writer: " + video_filepath)
         # video = cv2.VideoWriter(video_filepath, fourcc, 25.0, (1280, 720))
 
 
@@ -312,26 +249,13 @@ def play(args):
     np.set_printoptions(formatter={'float': '{:0.4f}'.format})
 
     # 足部刚体索引（用于诊断与视频叠加的接触力，替代硬编码索引）
-    left_foot_idx = env.feet_indices[0].item()
-    right_foot_idx = env.feet_indices[1].item()
 
     # 诊断输出目录（CSV 不依赖 RENDER，始终输出）
     diag_out_dir = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'play_output')
     os.makedirs(diag_out_dir, exist_ok=True)
     # 对齐真机 walk_diag 列（czy/real_data/13rt/walk_diag_*.csv）：基座 + 逐关节 action/pos/vel/effort/pos_des_raw
     # 保留 base_vel_x/y/z 旧列（isaac-diag-eval 与既有分析依赖）
-    dof_names = [n[:-6] if n.endswith('_joint') else n for n in env.dof_names]  # 去掉 _joint 后缀做列名
-    diag = {k: [] for k in ["phase_sin", "phase_cos", "cycle_time", "smoothed_speed", "active_stage",
-                            "cmd_linear_x", "cmd_linear_y", "cmd_angular_z",
-                            "base_euler_x", "base_euler_y", "base_euler_z",
-                            "base_ang_vel_x", "base_ang_vel_y", "base_ang_vel_z",
-                            "base_vel_x", "base_vel_y", "base_vel_z",
-                            "base_height", "base_pos_x", "base_pos_y", "base_yaw",
-                            "foot_z_l", "foot_z_r", "foot_x_l", "foot_y_l", "foot_x_r", "foot_y_r", "foot_force_l", "foot_force_r",
-                            "command_x"]}
-    for jn in dof_names:
-        for q in ["action", "pos", "vel", "effort", "pos_des_raw"]:
-            diag[f"{q}_{jn}_joint"] = []
+    diag = {}
     clip_count = 0  # 力矩限幅累计计数（对应真机 clip_count）
 
     # =========== 新增：初始化速度累加器 ===========
@@ -343,101 +267,35 @@ def play(args):
     # 令（"站稳再走"）；play 若 reset 后立即注入当前段全速指令，属分布外空中起步
     # （h=0.699 悬空、双脚离地 0.13m 落地即迈步）——实测左脚先摆→roll 单调右漂
     # 3~4s 倒（lagfix 回放 3/3 段复现）。缓冲期命令置 0，对齐训练渐进。
-    STAND_BUFFER_STEPS = 150   # 1.5s @100Hz
+    STAND_BUFFER_STEPS = round(1.5 / dt)
     stand_buffer = 0
 
-    for i in range(TOTAL_PLAY_STEPS):
+    for i in range(total_play_steps):
 
-        actions = policy(obs.detach()) # * 0.
-
-        if FIX_COMMAND:
-            # 速度阶梯：0 → 0.6 → 0
-            env.commands[:, 0] = 0. if stand_buffer > 0 else current_command(i)
-            env.commands[:, 1] = 0
-            env.commands[:, 2] = 0
-            env.commands[:, 3] = 0.
-
-        else:
-            env.commands[:, 0] = x_vel_cmd
+        requested = current_command(i, profile) if FIX_COMMAND else x_vel_cmd
+        applied = 0.0 if stand_buffer > 0 else requested
+        obs = inject_evaluation_command(env, applied)
+        if not FIX_COMMAND:
             env.commands[:, 1] = y_vel_cmd
             env.commands[:, 2] = yaw_vel_cmd
-            env.commands[:, 3] = 0.
-        # 定义一个计数器在循环外
-        
+            env.obs_buf[:, -env_cfg.env.num_single_obs + 3:-env_cfg.env.num_single_obs + 5] = (
+                env.commands[:, 1:3] * env.commands_scale[1:3])
+        actions = policy(obs.detach())
         obs, critic_obs, rews, dones, infos = env.step(actions.detach())
         # §21b: env0 reset 触发站立缓冲倒计时
         if dones[robot_index]:
             stand_buffer = STAND_BUFFER_STEPS
         elif stand_buffer > 0:
             stand_buffer -= 1
-        # =========== 新增：每一帧都更新统计数据 ===========
-        # 即使不录制这一帧，也要统计这一帧的数据，这样平均值才准确
-        current_vel_x = env.base_lin_vel[0, 0].item()
+        row = capture_playback_step(env, infos, rews, dones, ppo_runner.alg,
+                                    requested, current_stage(i, profile), clip_count, robot_index)
+        clip_count = int(row["clip_count"])
+        for name, value in row.items():
+            diag.setdefault(name, []).append(value)
+        current_vel_x = row["base_vel_x"]
+        real_cmd_x = row["command_x"]
         vel_sum += current_vel_x
         step_accum += 1
-        # ===============================================
-
-        # =========== 每步诊断采集（与 RENDER 无关） ===========
-        real_cmd_x = env.commands[robot_index, 0].item()
-        bq = env.root_states[robot_index, 3:7]
-        # 四元数 (x,y,z,w) -> roll/pitch/yaw（与 ang_vel 一同对齐真机 imu 列）
-        qx, qy, qz, qw = bq[0].item(), bq[1].item(), bq[2].item(), bq[3].item()
-        roll = math.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
-        pitch = math.asin(max(-1.0, min(1.0, 2.0 * (qw * qy - qz * qx))))
-        base_yaw = torch.atan2(2.0 * (bq[3] * bq[2] + bq[0] * bq[1]),
-                               1.0 - 2.0 * (bq[1] * bq[1] + bq[2] * bq[2]))
-        # 步态相位：直接用 env._get_phase（exp0.2 逐段周期 + 站立归零，与观测同源）
-        ph = env._get_phase()[robot_index].item() % 1.0
-        diag["phase_sin"].append(math.sin(2 * math.pi * ph))
-        diag["phase_cos"].append(math.cos(2 * math.pi * ph))
-        # 有效周期：mocap 行走段 = 段周期/缩放（exp1.7 自适应步频后为 _current_cycle_time）；
-        # 站立/回退 = 全局 cycle_time
-        eff_cycle = env_cfg.rewards.cycle_time
-        if getattr(env, "use_mocap_ref", False):
-            walking = torch.norm(env.commands[robot_index, :3]).item() > env_cfg.commands.stand_com_threshold
-            if walking:
-                env.seg_id = env._current_seg_id()
-                eff_cycle = float(env._current_cycle_time()[robot_index].item())
-        diag["cycle_time"].append(eff_cycle)
-        diag["smoothed_speed"].append(0.0)
-        diag["active_stage"].append(0)
-        diag["cmd_linear_x"].append(real_cmd_x)
-        diag["cmd_linear_y"].append(env.commands[robot_index, 1].item())
-        diag["cmd_angular_z"].append(env.commands[robot_index, 2].item())
-        diag["command_x"].append(real_cmd_x)
-        diag["base_euler_x"].append(roll)
-        diag["base_euler_y"].append(pitch)
-        diag["base_euler_z"].append(base_yaw.item())
-        diag["base_ang_vel_x"].append(env.base_ang_vel[robot_index, 0].item())
-        diag["base_ang_vel_y"].append(env.base_ang_vel[robot_index, 1].item())
-        diag["base_ang_vel_z"].append(env.base_ang_vel[robot_index, 2].item())
-        diag["base_vel_x"].append(current_vel_x)
-        diag["base_vel_y"].append(env.base_lin_vel[robot_index, 1].item())
-        diag["base_vel_z"].append(env.base_lin_vel[robot_index, 2].item())
-        diag["base_height"].append(env.root_states[robot_index, 2].item())
-        diag["base_pos_x"].append(env.root_states[robot_index, 0].item())
-        diag["base_pos_y"].append(env.root_states[robot_index, 1].item())
-        diag["base_yaw"].append(base_yaw.item())
-        diag["foot_z_l"].append(env.rigid_state[robot_index, left_foot_idx, 2].item())
-        diag["foot_z_r"].append(env.rigid_state[robot_index, right_foot_idx, 2].item())
-        diag["foot_x_l"].append(env.rigid_state[robot_index, left_foot_idx, 0].item())
-        diag["foot_y_l"].append(env.rigid_state[robot_index, left_foot_idx, 1].item())
-        diag["foot_x_r"].append(env.rigid_state[robot_index, right_foot_idx, 0].item())
-        diag["foot_y_r"].append(env.rigid_state[robot_index, right_foot_idx, 1].item())
-        diag["foot_force_l"].append(env.contact_forces[robot_index, left_foot_idx, 2].item())
-        diag["foot_force_r"].append(env.contact_forces[robot_index, right_foot_idx, 2].item())
-        # 逐关节：策略输出（缩放前）、位置、速度、实际力矩、期望位置（lagged action + default）
-        for k, jn in enumerate(dof_names):
-            diag[f"action_{jn}_joint"].append(env.actions[robot_index, k].item())
-            diag[f"pos_{jn}_joint"].append(env.dof_pos[robot_index, k].item())
-            diag[f"vel_{jn}_joint"].append(env.dof_vel[robot_index, k].item())
-            tau = env.torques[robot_index, k].item()
-            diag[f"effort_{jn}_joint"].append(tau)
-            if abs(tau) >= env.torque_limits[k].item() - 1e-6:
-                clip_count += 1
-            pos_des = (env.lagged_actions_scaled[robot_index, k] + env.default_dof_pos[robot_index, k]).item()
-            diag[f"pos_des_raw_{jn}_joint"].append(pos_des)
-        # =====================================================
         if RENDER:
             frame_count += 1
             env.gym.fetch_results(env.sim, True)
@@ -475,8 +333,8 @@ def play(args):
                 # # ==================== 前进速度结束 ====================
                 # ==================== 1. 获取基础数据 ====================
                 # 速度数据
-                target_vel = env.commands[0, 0].item()
-                current_vel_x = env.base_lin_vel[0, 0].item()
+                target_vel = diag["command_applied"][-1]
+                current_vel_x = diag["base_vel_x"][-1]
                 avg_vel = vel_sum / step_accum if step_accum > 0 else 0.0
 
                 # y/z 方向与偏航速度（诊断缓冲区最新值）
@@ -546,55 +404,6 @@ def play(args):
                
 
                 video.write(img[..., :3])
-        real_cmd_x = env.commands[robot_index, 0].item()
-
-        if i > stop_state_log*0.2 and i < stop_state_log:
-            dict = {
-                    'base_height' : env.root_states[robot_index, 2].item(),
-                    'foot_z_l' : env.rigid_state[robot_index,4,2].item(),
-                    'foot_z_r' : env.rigid_state[robot_index,9,2].item(),
-                    'foot_forcez_l' : env.contact_forces[robot_index,4,2].item(),
-                    'foot_forcez_r' : env.contact_forces[robot_index,9,2].item(),
-                    'base_vel_x': env.base_lin_vel[robot_index, 0].item(),
-                    # 'command_x': x_vel_cmd,
-                    'command_x': real_cmd_x,
-                    'base_vel_y':  env.base_lin_vel[robot_index, 1].item(),
-                    'command_y': y_vel_cmd,
-                    'base_vel_z':  env.base_lin_vel[robot_index, 2].item(),
-                    'base_vel_yaw':  env.base_ang_vel[robot_index, 2].item(),
-                    'command_yaw': yaw_vel_cmd,
-                    'dof_pos_target': actions[robot_index, 0].item() * env.cfg.control.action_scale,
-                    'dof_pos': env.dof_pos[robot_index, 0].item(),
-                    'dof_vel': env.dof_vel[robot_index, 0].item(),
-                    'dof_torque': env.torques[robot_index, 0].item(),
-                    'command_sin': obs[0,0].item(),
-                    'command_cos': obs[0,1].item(),
-                }
-
-            # add dof_pos_target
-            for i in range(env_cfg.env.num_actions):
-                dict[f'dof_pos_target[{i}]'] = actions[robot_index, i].item() * env.cfg.control.action_scale,
-
-            # add dof_pos
-            for i in range(env_cfg.env.num_actions):
-                dict[f'dof_pos[{i}]'] = env.dof_pos[robot_index, i].item(),
-
-            # add dof_torque
-            for i in range(env_cfg.env.num_actions):
-                dict[f'dof_torque[{i}]'] = env.torques[robot_index, i].item(),
-
-            # add dof_vel
-            for i in range(env_cfg.env.num_actions):
-                dict[f'dof_vel[{i}]'] = env.dof_vel[robot_index, i].item(),
-
-            logger.log_states(dict=dict)
-        
-        elif _== stop_state_log:
-            logger.plot_states()
-        elif i == stop_state_log:
-            logger.plot_states()
-
-        # ====================== Log states ======================
         if infos["episode"]:
             num_episodes = torch.sum(env.reset_buf).item()
             if num_episodes>0:
@@ -602,30 +411,30 @@ def play(args):
 
     # =========== 回放结束：写出诊断 CSV + 分段 Summary ===========
     dt = env_cfg.sim.dt * env_cfg.control.decimation
-    csv_path = os.path.join(diag_out_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{run_name_str if RENDER else 'test'}_isaac_diag.csv")
-    base_cols = ["step", "time_s", "phase_sin", "phase_cos", "cycle_time", "smoothed_speed", "active_stage",
-                 "cmd_linear_x", "cmd_linear_y", "cmd_angular_z",
-                 "base_euler_x", "base_euler_y", "base_euler_z",
-                 "base_ang_vel_x", "base_ang_vel_y", "base_ang_vel_z",
-                 "base_vel_x", "base_vel_y", "base_vel_z",
-                 "base_height", "base_pos_x", "base_pos_y", "base_yaw",
-                 "foot_z_l", "foot_z_r", "foot_x_l", "foot_y_l", "foot_x_r", "foot_y_r", "foot_force_l", "foot_force_r", "command_x", "clip_count"]
-    joint_cols = [f"{q}_{jn}_joint" for jn in dof_names for q in ["action", "pos", "vel", "effort", "pos_des_raw"]]
-    header = base_cols + joint_cols
+    csv_path = os.path.join(diag_out_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{run_name_str}_isaac_diag.csv")
+    header = ["step", "time_s"] + list(diag)
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(header)
-        for i in range(len(diag["command_x"])):
-            row = [i, round(i * dt, 6)] + [diag[c][i] for c in base_cols[2:] if c != "clip_count"]
-            row.append(clip_count)  # 累计限幅计数（每行重复累计值）
-            row += [diag[c][i] for c in joint_cols]
-            writer.writerow(row)
+        for step in range(len(diag["command_x"])):
+            writer.writerow([step, round(step * dt, 6)] + [diag[name][step] for name in diag])
+    import json
+    metadata = dict(task=args.task, eval_mode=mode, seed=seed, control_dt=dt,
+                    physics_dt=env_cfg.sim.dt, video_fps=video_fps,
+                    profile=profile, steps=total_play_steps,
+                    checkpoint=args.checkpoint, load_run=args.load_run,
+                    checkpoint_path=getattr(ppo_runner, "loaded_checkpoint_path", None),
+                    resets=sum(diag["done"]), timeouts=sum(diag["timeout"]),
+                    success=not any(diag["done"]), torque_clip_count=clip_count,
+                    pushes=env_cfg.domain_rand.push_robots, noise=env_cfg.noise.add_noise)
+    with open(csv_path.replace("_isaac_diag.csv", "_metadata.json"), "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2)
     print(f"Saved diagnostic CSV -> {csv_path}")
-    print(f"Torque clip count (total, all dofs x steps): {clip_count}")
+    print(f"Torque clip count (joint saturation events across physics substeps): {clip_count}")
 
     print("\n===== Speed Profile Summary =====")
     acc = 0
-    for seg_i, (steps, vel) in enumerate(VEL_PROFILE):
+    for seg_i, (steps, vel) in enumerate(profile):
         seg_vels = diag["base_vel_x"][acc:acc + steps]
         print(f"  Segment {seg_i}: cmd={vel:.2f} m/s | avg_real={np.mean(seg_vels):.3f} m/s")
         acc += steps

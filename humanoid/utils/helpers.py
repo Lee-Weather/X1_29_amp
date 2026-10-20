@@ -182,6 +182,12 @@ def update_cfg_from_args(env_cfg, cfg_train, args):
 
 def get_args():
     custom_parameters = [
+        {"name": "--eval_mode", "type": str, "default": None,
+         "help": "Playback domain: nominal_no_push, randomized_no_push, or train."},
+        {"name": "--play_speed", "type": float, "default": None,
+         "help": "Optional constant vx command for playback; default uses the six-stage profile."},
+        {"name": "--play_duration", "type": float, "default": 20.0,
+         "help": "Duration in simulation seconds when --play_speed is supplied."},
         {
             "name": "--task",
             "type": str,

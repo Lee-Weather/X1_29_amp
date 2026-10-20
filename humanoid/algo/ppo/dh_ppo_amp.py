@@ -18,6 +18,7 @@ import torch.optim as optim
 
 from .dh_ppo import DHPPO
 from humanoid.algo.amp import AMPDiscriminator, CircularBuffer
+from humanoid.algo.amp.reward import fuse_amp_rewards
 
 
 class DHPPOAMP(DHPPO):
@@ -36,6 +37,7 @@ class DHPPOAMP(DHPPO):
                  amp_disc_trunk_weight_decay=1e-3,
                  amp_disc_linear_weight_decay=1e-1,
                  amp_disc_max_grad_norm=1.0,
+                 amp_direction_gate=False,
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.amp_enabled = bool(amp_enabled)
@@ -51,6 +53,7 @@ class DHPPOAMP(DHPPO):
         self.amp_disc_trunk_weight_decay = float(amp_disc_trunk_weight_decay)
         self.amp_disc_linear_weight_decay = float(amp_disc_linear_weight_decay)
         self.amp_disc_max_grad_norm = float(amp_disc_max_grad_norm)
+        self.amp_direction_gate = bool(amp_direction_gate)
 
         # 由 runner 注入后构建（num_dof/dt 只有 env 知道；在 inference_mode 外构建，
         # 缓冲预分配为普通张量，避免 rollout 期 append 产生推理张量）
@@ -65,6 +68,8 @@ class DHPPOAMP(DHPPO):
         self._style_env_count = 0.0
         self._healthy_sum = 0.0    # exp1.5: buffer 门控健康样本占比监控
         self._healthy_total = 0.0
+        self._reward_sums = {}
+        self._reward_count = 0
 
     def configure_amp(self, disc_obs_dim, num_envs, dt):
         """runner 在 alg 构造后调用（inference_mode 外）：按 env 实际维度构建 AMP 组件"""
@@ -95,6 +100,15 @@ class DHPPOAMP(DHPPO):
         self.disc_demo_obs_buffer = CircularBuffer(
             self.amp_disc_buffer_size, num_envs, obs_shape, self.device)
 
+    def compute_amp_reward(self, rewards, dones, amp):
+        """Compute the training reward also during playback, without touching storage."""
+        style, score = self.amp_discriminator.predict_style_reward(amp["disc_obs"], dt=self.amp_dt)
+        gate = amp["direction_gate"] if self.amp_direction_gate else None
+        result = fuse_amp_rewards(rewards, style, amp["stand_mask"], dones,
+                                  self.amp_task_lerp, gate)
+        result["disc_score"] = score
+        return result
+
     def process_env_step(self, rewards, dones, infos):
         if not (self.amp_enabled and self.amp_discriminator is not None and "amp" in infos):
             super().process_env_step(rewards, dones, infos)
@@ -104,16 +118,24 @@ class DHPPOAMP(DHPPO):
         disc_demo_obs = amp["disc_demo_obs"]  # (N, S, D)
         stand_mask = amp["stand_mask"]        # (N,) bool
 
-        # 旧参 no_grad 算风格分（eval 语义；值域 [0, dt*scale]）
-        style_rewards, disc_score = self.amp_discriminator.predict_style_reward(
-            disc_obs, dt=self.amp_dt)
-
-        # 站立 env 纯 task（demo 库全是行走，不 mask 会与 stand_still 打架）；
-        # 行走 env：lerp·task + (1-lerp)·style —— 融合值直接进 GAE
-        fused = torch.where(stand_mask,
-                            rewards,
-                            self.amp_task_lerp * rewards
-                            + (1.0 - self.amp_task_lerp) * style_rewards)
+        reward = self.compute_amp_reward(rewards, dones, amp)
+        style_rewards = reward["style_used"]
+        fused = reward["fused"]
+        if self.amp_direction_gate:
+            walk = ~stand_mask
+            values = {
+                "style_raw_walk": reward["style_raw"],
+                "style_used_walk": style_rewards,
+                "task_contribution_walk": reward["task_contribution"],
+                "style_contribution_walk": reward["style_contribution"],
+                "direction_gate_walk": reward["direction_gate"],
+                "task_positive_walk": reward["task_contribution"].clamp(min=0),
+                "task_negative_walk": reward["task_contribution"].clamp(max=0),
+            }
+            for name, value in values.items():
+                self._reward_sums[name] = self._reward_sums.get(name, 0) + value[walk].sum().detach()
+            self._reward_count += int(walk.sum().item())
+            infos.setdefault("reward_diagnostics", {}).update(reward)
 
         # agent 侧三重门控入 buffer（exp1.5 主攻）：站立/终止/复位初期样本不进 D 训练集。
         # 剥掉 D 的平凡可分样本——exp1.3 死锁头号嫌疑：gait 调度 26% 站立段样本 +
@@ -264,7 +286,7 @@ class DHPPOAMP(DHPPO):
         self.storage.clear()  # CircularBuffer 不清空（滑窗跨迭代混合）
 
         self.amp_stats = {}
-        if use_amp:
+        if use_amp or (self.amp_direction_gate and self.amp_discriminator is not None):
             self.amp_stats = {
                 "disc_loss": mean_disc_loss / num_updates,
                 "disc_grad_penalty": mean_disc_grad_penalty / num_updates,
@@ -276,6 +298,11 @@ class DHPPOAMP(DHPPO):
                 "buffer_healthy": (self._healthy_sum / self._healthy_total
                                    if self._healthy_total > 0 else -1.0),
             }
+        if self.amp_direction_gate:
+            self.amp_stats.update({name: float(total) / max(self._reward_count, 1)
+                                   for name, total in self._reward_sums.items()})
+            self._reward_sums.clear()
+            self._reward_count = 0
         self._style_rew_sum = 0.0
         self._style_env_count = 0.0
         self._healthy_sum = 0.0

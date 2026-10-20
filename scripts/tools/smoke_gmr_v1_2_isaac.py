@@ -15,7 +15,7 @@ from humanoid.utils import get_args, task_registry
 
 def main():
     args = get_args()
-    assert args.task == "x1_dh_stand_v12", "this smoke check needs the v1.2 task"
+    assert args.task in ("x1_dh_stand_v12", "x1_dh_stand_v12_exp31"), "this smoke check needs a v1.2 task"
     env, _ = task_registry.make_env(name=args.task, args=args)
     assert set(env.seg_names) == {"walk_forward", "walk_backward"}
     assert env._amp_num_seg == 2
@@ -33,6 +33,10 @@ def main():
         env.phase_length_buf.fill_(100)
         env._gait_phase.fill_(0.25)
         env.compute_ref_state()
+        if hasattr(env, "_ref_elapsed"):
+            # Inspect the settled lookup target; continuity itself has CPU contract tests.
+            env._ref_elapsed.fill_(env.cfg.rewards.v12_ref_blend_time)
+            env.compute_ref_state()
 
         if segment is None:
             expected = env.default_dof_pos.expand_as(env.ref_dof_pos)
@@ -56,6 +60,11 @@ def main():
         assert amp["disc_obs"].shape == (env.num_envs, 3, 61)
         assert torch.isfinite(amp["disc_obs"]).all()
         assert torch.isfinite(amp["disc_demo_obs"]).all()
+        if args.task == "x1_dh_stand_v12_exp31":
+            assert not env.cfg.domain_rand.push_robots
+            assert not env.cfg.rewards.only_positive_rewards
+            assert torch.all((amp["direction_gate"] >= 0) & (amp["direction_gate"] <= 1))
+            assert torch.equal(amp["command_x"], extras["diagnostics"]["command_applied"])
         print("SMOKE_{} OK: ref_error={:.2e}, reward_mean={:.3f}".format(
             mode.upper(), error, rewards.mean().item()), flush=True)
 

@@ -26,6 +26,14 @@ except ImportError:
 
 import torch
 
+# Logging is outside these CPU algorithm tests.
+try:
+    from torch.utils.tensorboard import SummaryWriter  # noqa: F401
+except ModuleNotFoundError:
+    logging_stub = types.ModuleType("torch.utils.tensorboard")
+    logging_stub.SummaryWriter = None
+    sys.modules["torch.utils.tensorboard"] = logging_stub
+
 from humanoid.algo.amp import AMPDiscriminator, CircularBuffer, EmpiricalNormalization
 from humanoid.algo.ppo.actor_critic_dh import ActorCriticDH
 from humanoid.algo.ppo.dh_ppo_amp import DHPPOAMP
@@ -144,7 +152,7 @@ def test_lsgan_convergence():
 
 
 # ---------------------------------------------------------------- 5. DHPPOAMP 端到端
-def test_dhppoamp_e2e():
+def test_dhppoamp_e2e(direction_gate=False):
     N_ENV, N_STEPS, DIM, STEPS = 16, 24, 61, 3
     DT = 0.02
     ac = ActorCriticDH(
@@ -157,7 +165,7 @@ def test_dhppoamp_e2e():
                    lin_vel_idx=10, learning_rate=3e-4, entropy_coef=0.001,
                    amp_disc_obs_steps=STEPS, amp_disc_hidden_dims=[32, 16],
                    amp_disc_buffer_size=32, amp_task_lerp=0.6,
-                   amp_style_reward_scale=1.5, device="cpu")
+                   amp_style_reward_scale=1.5, amp_direction_gate=direction_gate, device="cpu")
     alg.configure_amp(disc_obs_dim=DIM, num_envs=N_ENV, dt=DT)
     check("configure_amp 构建判别器/优化器/双缓冲",
           alg.amp_discriminator is not None and alg.disc_optimizer is not None
@@ -182,6 +190,7 @@ def test_dhppoamp_e2e():
                     "disc_obs": torch.randn(N_ENV, STEPS, DIM),
                     "disc_demo_obs": torch.randn(N_ENV, STEPS, DIM) + 3.0,
                     "stand_mask": stand,
+                    "direction_gate": (torch.arange(N_ENV) % 2).float(),
                 }}
                 if check_fusion and i == 0:
                     disc_obs_used = infos["amp"]["disc_obs"]
@@ -190,6 +199,8 @@ def test_dhppoamp_e2e():
                     stored = alg.storage.rewards[0, :, 0].clone()
                     with torch.no_grad():
                         style, _ = alg.amp_discriminator.predict_style_reward(disc_obs_used, dt=DT)
+                    if direction_gate:
+                        style = style.clamp(max=0) + infos["amp"]["direction_gate"] * style.clamp(min=0)
                     exp_walk = 0.6 * rewards + 0.4 * style
                     check("站立 env 融合=纯 task", torch.allclose(stored[3], rewards[3]))
                     check("行走 env 融合=lerp·task+(1-lerp)·style",
@@ -208,8 +219,11 @@ def test_dhppoamp_e2e():
     alg.compute_returns(critic_obs)
     v, s, es = alg.update()   # inference_mode 外：若缓冲被推理张量污染此处会抛错
     check("update() 返回 3 元组", all(isinstance(x, float) for x in (v, s, es)))
-    check("amp_stats 含 5 指标", set(alg.amp_stats.keys()) ==
+    check("amp_stats 含必要诊断指标", set(alg.amp_stats.keys()) >=
           {"disc_loss", "disc_grad_penalty", "disc_score", "disc_demo_score", "style_reward"})
+    if direction_gate:
+        check("方向门控回报贡献已记录", {"direction_gate_walk", "style_raw_walk", "style_used_walk",
+              "task_contribution_walk", "style_contribution_walk"} <= set(alg.amp_stats))
 
     # 迭代 2-9：多轮 rollout+update 让判别器收敛（合成簇 demo=agent+3 线性可分）
     for _ in range(8):
@@ -230,12 +244,34 @@ def test_dhppoamp_e2e():
     check("无 extras[amp] 时缓冲不追加", alg.disc_obs_buffer._num_pushes == pushes)
 
 
+def test_direction_gate_before_healthy_samples():
+    ac = ActorCriticDH(num_short_obs=20, num_proprio_obs=16, num_critic_obs=40, num_actions=6,
+        actor_hidden_dims=[32], critic_hidden_dims=[32], state_estimator_hidden_dims=[16],
+        in_channels=66, kernel_size=[6, 4], filter_size=[8, 8], stride_size=[3, 2], lh_output_dim=16)
+    alg = DHPPOAMP(ac, num_learning_epochs=1, num_mini_batches=1, lin_vel_idx=10,
+        amp_disc_hidden_dims=[32, 16], amp_direction_gate=True, amp_buffer_min_episode_len=50, device="cpu")
+    alg.configure_amp(61, 4, .01)
+    alg.init_storage(4, 2, [66 * 16], [40], [6])
+    for _ in range(2):
+        alg.act(torch.randn(4, 66 * 16), torch.randn(4, 40))
+        infos = {"amp": {"disc_obs": torch.randn(4, 3, 61), "disc_demo_obs": torch.randn(4, 3, 61),
+            "stand_mask": torch.zeros(4, dtype=torch.bool), "episode_length": torch.zeros(4),
+            "direction_gate": torch.zeros(4)}}
+        alg.process_env_step(torch.full((4,), -.1), torch.zeros(4, dtype=torch.bool), infos)
+    alg.compute_returns(torch.randn(4, 40))
+    alg.update()
+    check("健康样本尚未入库时日志指标完整", {"disc_loss", "style_reward", "direction_gate_walk"} <= set(alg.amp_stats))
+    check("负 task 在无风格奖励时保留", alg.amp_stats["task_contribution_walk"] < 0)
+
+
 def main():
     test_normalization()
     test_buffer()
     test_discriminator()
     test_lsgan_convergence()
     test_dhppoamp_e2e()
+    test_dhppoamp_e2e(direction_gate=True)
+    test_direction_gate_before_healthy_samples()
     failed = [n for n, ok in _RESULTS if not ok]
     print("\n===== {} / {} 项通过 =====".format(
         len(_RESULTS) - len(failed), len(_RESULTS)))

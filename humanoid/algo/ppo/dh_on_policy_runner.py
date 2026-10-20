@@ -302,6 +302,13 @@ class DHOnPolicyRunner:
                 log_string += (
                     f"""{'AMP buffer healthy:':>{pad}} {amp_stats['buffer_healthy']:.3f}\n"""
                 )
+            if "direction_gate_walk" in amp_stats:
+                log_string += (
+                    f"""{'AMP raw/used (walk):':>{pad}} {amp_stats['style_raw_walk']:.5f} / {amp_stats['style_used_walk']:.5f}\n"""
+                    f"""{'Task/style contribution:':>{pad}} {amp_stats['task_contribution_walk']:.5f} / {amp_stats['style_contribution_walk']:.5f}\n"""
+                    f"""{'AMP direction gate:':>{pad}} {amp_stats['direction_gate_walk']:.3f}\n"""
+                    f"""{'Task positive/negative:':>{pad}} {amp_stats['task_positive_walk']:.5f} / {amp_stats['task_negative_walk']:.5f}\n"""
+                )
         log_string += (
             f"""{'-' * width}\n"""
             f"""{'Total timesteps:':>{pad}} {self.tot_timesteps}\n"""
@@ -344,6 +351,7 @@ class DHOnPolicyRunner:
             if load_optimizer and "amp_disc_optimizer_state_dict" in loaded_dict:
                 self.alg.disc_optimizer.load_state_dict(loaded_dict["amp_disc_optimizer_state_dict"])
         self.current_learning_iteration = loaded_dict["iter"]
+        self.loaded_checkpoint_path = os.path.abspath(path)
         return loaded_dict["infos"]
 
     def get_inference_policy(self, device=None):
