@@ -151,7 +151,7 @@ class DHOnPolicyRunner:
 
                     if self.log_dir is not None:
                         # Book keeping
-                        if "episode" in infos:
+                        if infos.get("episode"):
                             ep_infos.append(infos["episode"])
                         cur_reward_sum += rewards
                         cur_episode_length += 1
@@ -195,9 +195,11 @@ class DHOnPolicyRunner:
 
         ep_string = f""
         if locs["ep_infos"]:
-            for key in locs["ep_infos"][0]:
+            for key in sorted({key for info in locs["ep_infos"] for key in info}):
                 infotensor = torch.tensor([], device=self.device)
                 for ep_info in locs["ep_infos"]:
+                    if key not in ep_info:
+                        continue
                     # handle scalar and zero dimensional tensor infos
                     if not isinstance(ep_info[key], torch.Tensor):
                         ep_info[key] = torch.Tensor([ep_info[key]])
