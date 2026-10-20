@@ -127,7 +127,8 @@ class DHOnPolicyRunner:
             self.env.num_envs, dtype=torch.float, device=self.device
         )
 
-        tot_iter = self.current_learning_iteration + num_learning_iterations
+        start_iteration = self.current_learning_iteration
+        tot_iter = start_iteration + num_learning_iterations
 
         for it in range(self.current_learning_iteration, tot_iter):
             self.it = it
@@ -314,8 +315,8 @@ class DHOnPolicyRunner:
             f"""{'Total timesteps:':>{pad}} {self.tot_timesteps}\n"""
             f"""{'Iteration time:':>{pad}} {iteration_time:.2f}s\n"""
             f"""{'Total time:':>{pad}} {self.tot_time:.2f}s\n"""
-            f"""{'ETA:':>{pad}} {self.tot_time / (locs['it'] + 1) * (
-                               locs['num_learning_iterations'] - locs['it']):.1f}s\n"""
+            f"""{'ETA:':>{pad}} {self.tot_time / (locs['it'] - locs['start_iteration'] + 1) * (
+                               locs['tot_iter'] - locs['it'] - 1):.1f}s\n"""
         )
         print(log_string)
 
@@ -325,6 +326,8 @@ class DHOnPolicyRunner:
             "optimizer_state_dict": self.alg.optimizer.state_dict(),
             "es_optimizer_state_dict": self.alg.state_estimator_optimizer.state_dict(),
             "iter": self.it,
+            # `iter` is the zero-based index of the last completed update.
+            "completed_iterations": self.it + 1,
             "infos": infos,
         }
         # exp1: 判别器 + 归一化统计量（buffer 注册随 state_dict）+ 独立优化器，断电续训不丢判别器
@@ -350,7 +353,8 @@ class DHOnPolicyRunner:
             self.alg.amp_discriminator.load_state_dict(loaded_dict["amp_discriminator_state_dict"])
             if load_optimizer and "amp_disc_optimizer_state_dict" in loaded_dict:
                 self.alg.disc_optimizer.load_state_dict(loaded_dict["amp_disc_optimizer_state_dict"])
-        self.current_learning_iteration = loaded_dict["iter"]
+        self.current_learning_iteration = int(loaded_dict.get(
+            "completed_iterations", int(loaded_dict["iter"]) + 1))
         self.loaded_checkpoint_path = os.path.abspath(path)
         return loaded_dict["infos"]
 

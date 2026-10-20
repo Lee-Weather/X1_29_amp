@@ -468,6 +468,8 @@ gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand_v12_exp31 --headle
 
 `max_iterations=6000` 是本次新增轮数；runner 从 checkpoint 的 6000 开始，最终目标为 12000。恢复元数据由源任务 `model list` 的 checkpoint 6000 返回值填写，不猜测对象路径。
 
+启动前实读 085 checkpoint：文件名为 `model_6000.pt`，内部 `iter=5999`，是最后一次完成更新的零起始索引。已修正 runner：新 checkpoint 增加 `completed_iterations`，旧 checkpoint 按 `iter+1` 恢复下一次更新编号；本组从 6000 开始进行 6000 次更新，最终文件为 `model_12000.pt`。同时按本次已运行轮数与剩余轮数计算 ETA，避免续训时产生负 ETA。
+
 ### 6. 预期与验收
 
 与 exp3.1 §6 一致，训练后按相同 seed 和六段 `0 → +0.4 → +0.6 → 0 → −0.2 → 0` 回放。重点比较最终方向正确率、跟速误差、reset 次数、episode 长度和 task/style 实际贡献。对照 b 时明确：a 已经历 6000 轮旧目标预训练，总训练量为 12000 轮；这是实用初始化策略比较，并非等总训练预算比较。
