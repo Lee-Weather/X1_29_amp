@@ -14,7 +14,7 @@
 | exp3.1b | 2026-10-20 | 从零 6000 轮完成；最终名义回放仍终止 4 次 | 未通过名义步态验收 | TASK_20261020_073；071 为失败首启 | lim…o3gsm@maxxspace.com（账号池第 8 个） | model_6000.pt |
 | exp3.2 | 2026-10-20 | 从零 6000 轮完成；两模式回放均零终止但几乎不执行前后速度，三件套已取回 | 失败（跟速未达标） | TASK_20261020_144 | lim…29ym@maxxspace.com（第 9 个） | model_6000.pt |
 | exp3.3 | 2026-10-21 | 6000轮完成；最终六段回放6次跌倒，后退指令仍向前 | 失败 | TASK_20261021_020 | lim…th560d@maxxspace.com（第10个） | model_6000.pt |
-| exp3.4 | 2026-10-21 | 成熟exp2.4a-cont2迁移至B3，仅站立/前进；恢复98维观测及default+policy控制，新增12000轮；代码和CPU检查完成 | 待训练 | 待创建 | 待选择 | 底模model_26998.pt，目标model_38998.pt |
+| exp3.4 | 2026-10-21 | 成熟exp2.4a-cont2迁移至B3，仅站立/前进；恢复98维观测及default+policy控制，新增12000轮；服务器回放和200轮冒烟通过 | 训练中 | TASK_20261021_068 | limxmv4xnjtlno3gsm@maxxspace.com | 底模model_26998.pt，目标model_38998.pt |
 
 ---
 
@@ -1005,7 +1005,7 @@ B3周期63帧作为参考、连续351帧作为AMP示范，均50Hz；B3采样权�
 | 参考权重 | B3=1.0，其他=0 |
 | AMP/ref姿态 | scale5，task/style=0.5/0.5，ref_joint_pos=0.5 |
 | 保存/目标 | 每100轮；预计model_38998.pt |
-| 云端账号/Task ID | 待选择/待创建；本次未启动 |
+| 云端账号/Task ID | limxmv4xnjtlno3gsm@maxxspace.com / TASK_20261021_068 |
 | 源模型SHA256 | f1838ebe07007d1f65380d67db7915a23c3793aa2bb2786d1006d7b1f03664a5 |
 
 准备命令及完整配置见[实施说明](../analysis/exp3_4/README.md)。
@@ -1016,6 +1016,10 @@ B3周期63帧作为参考、连续351帧作为AMP示范，均50Hz；B3采样权�
 
 ### 7. 实验结果
 
-代码与CPU检查完成：strict加载成熟checkpoint，actor2×29、critic2×1且有限；16个CPU环境张量跑4001步命令调度，站立和前进/停止时长正确；参考周期插值及站立切换通过，错误checkpoint拒绝，两个示范库只含B3。此检查未运行Isaac Gym，不能视为物理稳定性验收。服务器回放、冒烟和正式训练待执行，尚无exp3.4训练checkpoint、CSV或视频。
+代码与CPU检查完成：strict加载成熟checkpoint，actor2×29、critic2×1且有限；16个CPU环境张量跑4001步命令调度，站立和前进/停止时长正确；参考周期插值及站立切换通过，错误checkpoint拒绝，两个示范库只含B3。此检查未运行Isaac Gym，不能视为物理稳定性验收。201.5服务器检查已完成：源模型与B3初始30秒回放均0次终止；B3在+0.4/+0.6阶段平均速度0.320/0.493m/s，存在42次关节子步力矩裁剪事件。64env新增200轮短训正常退出并保存model_27198.pt，无运行异常；两份CSV与日志已取回，预检未录制视频。此结果不代表长训收敛或最终验收通过。
+
+正式训练已启动：TASK_20261021_068，账号limxmv4xnjtlno3gsm@maxxspace.com（userId4565），1×4090D24G、¥5.4/小时；平台启动时间2026-10-21 14:59:56、状态3。新增12000轮，目标model_38998.pt。训练提交30c4226已同步GitHub/GitLab，源模型通过精确哈希检查；实际首轮训练进度另见launch.json。
 
 CPU记录：[cpu_validation.json](../analysis/exp3_4/cpu_validation.json)。
+
+首轮运行确认：日志27015/38998，约完成新增18轮；Mean reward=8.67，Mean episode length=169.25步，约66356steps/s，启动期ETA17732.6秒。已确认源模型加载、迁移校验和exp3.4配置日志，无启动异常；这些是启动期指标，不用于收敛判定。

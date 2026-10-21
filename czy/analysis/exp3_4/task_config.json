@@ -1,0 +1,33 @@
+{
+  "taskBaseInfo": {
+    "projectId": "PRO_20261021_016",
+    "taskType": "1",
+    "trainType": "2",
+    "taskName": "exp3.4-B3-transfer-26998-plus12000",
+    "taskDescription": "Transfer post-axis-fix model_26998 to B3 forward only; 98 features; default+policy PD; fresh AMP and optimizers; nominal domain; 12000 additional updates.",
+    "taskTag": [
+      "exp3.4",
+      "B3",
+      "transfer",
+      "12000"
+    ],
+    "goodsId": "ESKU000001",
+    "goodsBackId": "SKUSL000002",
+    "gpuNum": 1,
+    "imageId": "BJX00000001",
+    "imageVersion": "V000412",
+    "personalDataPath": ""
+  },
+  "taskCodeInfo": {
+    "codeType": "2",
+    "codeUrl": "[{\"codeUrl\": \"https://github.com/Lee-Weather/X1_29_amp\", \"versionType\": \"1\", \"versionName\": \"codex/exp3-4\"}]",
+    "mainCodeUri": "X1_29_amp/humanoid/scripts/train.py",
+    "hparamsPath": "X1_29_amp/humanoid/envs/x1/x1_dh_stand_v12_exp34_config.py",
+    "startScript": "gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand_v12_exp34 --headless --num_envs=4096 --seed=5 --max_iterations=12000 --ckpt_path=X1_29_amp/model_26998.pt --disc_fresh --run_name=exp3_4",
+    "isOpen": "1"
+  },
+  "runtimeReminderConfig": {
+    "enableRuntimeReminder": false,
+    "reminderDurations": []
+  }
+}

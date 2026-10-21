@@ -1,0 +1,145 @@
+{
+  "finished": true,
+  "cases": {
+    "source": {
+      "returncode": 0,
+      "log": "/home/robot/czy/exp1/exp_20261021_144449/x1_exp34_preflight/source.log",
+      "metadata": {
+        "task": "x1_dh_stand_exp34_source",
+        "eval_mode": "nominal_no_push",
+        "seed": 123145,
+        "control_dt": 0.01,
+        "physics_dt": 0.001,
+        "video_fps": 50.0,
+        "profile": [
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            0.4
+          ],
+          [
+            500,
+            0.6
+          ],
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            0.4
+          ],
+          [
+            500,
+            0.0
+          ]
+        ],
+        "steps": 3000,
+        "checkpoint": null,
+        "load_run": null,
+        "zero_residual": false,
+        "checkpoint_path": "/home/robot/czy/exp1/exp_20261021_144449/x1_exp34_preflight/model_26998.pt",
+        "resets": 0,
+        "timeouts": 0,
+        "success": true,
+        "torque_clip_count": 0,
+        "pushes": false,
+        "noise": false
+      },
+      "csv": "/home/robot/czy/exp1/exp_20261021_144449/x1_exp34_preflight/logs/x1_dh_stand/play_output/20261021_145100_exp34_source_isaac_diag.csv",
+      "stage_vx": [
+        0.004387525075246231,
+        0.3325270399339497,
+        0.45558652764558794,
+        0.02079136060441033,
+        0.3436577858235687,
+        0.008296959069207332
+      ],
+      "source_ready": true
+    },
+    "b3_initial": {
+      "returncode": 0,
+      "log": "/home/robot/czy/exp1/exp_20261021_144449/x1_exp34_preflight/b3_initial.log",
+      "metadata": {
+        "task": "x1_dh_stand_v12_exp34",
+        "eval_mode": "nominal_no_push",
+        "seed": 123145,
+        "control_dt": 0.01,
+        "physics_dt": 0.001,
+        "video_fps": 50.0,
+        "profile": [
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            0.4
+          ],
+          [
+            500,
+            0.6
+          ],
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            0.4
+          ],
+          [
+            500,
+            0.0
+          ]
+        ],
+        "steps": 3000,
+        "checkpoint": null,
+        "load_run": null,
+        "zero_residual": false,
+        "checkpoint_path": "/home/robot/czy/exp1/exp_20261021_144449/x1_exp34_preflight/model_26998.pt",
+        "resets": 0,
+        "timeouts": 0,
+        "success": true,
+        "torque_clip_count": 42,
+        "pushes": false,
+        "noise": false
+      },
+      "csv": "/home/robot/czy/exp1/exp_20261021_144449/x1_exp34_preflight/logs/x1_dh_stand_v12_exp34/play_output/20261021_145443_exp34_b3_initial_isaac_diag.csv",
+      "stage_vx": [
+        0.005383256319037173,
+        0.31998494682088496,
+        0.4927909932732582,
+        0.04398674598737125,
+        0.3417855550367385,
+        0.0035869008081135688
+      ],
+      "source_ready": true
+    },
+    "smoke200": {
+      "returncode": 0,
+      "errors": [],
+      "final_checkpoint": "/home/robot/czy/exp1/exp_20261021_144449/x1_exp34_preflight/logs/x1_dh_stand_v12_exp34/exported_data/2026-10-21_14-55-03exp34_smoke200/model_27198.pt",
+      "last_iterations": [
+        [
+          "27195",
+          "27198"
+        ],
+        [
+          "27196",
+          "27198"
+        ],
+        [
+          "27197",
+          "27198"
+        ]
+      ]
+    }
+  },
+  "started_at": "2026-10-21T14:47:33.158963",
+  "finished_at": "2026-10-21T15:01:43.174073",
+  "ready_for_training": true
+}
