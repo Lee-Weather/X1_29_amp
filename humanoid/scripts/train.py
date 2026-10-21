@@ -35,6 +35,10 @@ from humanoid.envs import *
 from humanoid.utils import get_args, task_registry
 
 def train(args):
+    from humanoid import LEGGED_GYM_ROOT_DIR
+    from humanoid.utils.transfer_preflight import prepare_initial_transfer
+    _, train_cfg = task_registry.get_cfgs(name=args.task)
+    prepare_initial_transfer(args, train_cfg, LEGGED_GYM_ROOT_DIR)
     env, env_cfg = task_registry.make_env(name=args.task, args=args)
     ppo_runner, train_cfg, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args)
     ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=False)

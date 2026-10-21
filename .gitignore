@@ -15,6 +15,8 @@ czy/gmr/
 !resources/motions/processed/amp_v1_2.pt
 !resources/motions/processed/ref_lib_v1_2_exp33_phase.pt
 !resources/motions/processed/amp_v1_2_exp33.pt
+!resources/motions/processed/ref_lib_v1_2_exp34_phase.pt
+!resources/motions/processed/amp_v1_2_exp34.pt
 *.mp4
 *.mpg
 *.avi

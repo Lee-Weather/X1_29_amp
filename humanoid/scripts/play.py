@@ -119,6 +119,8 @@ if joystick_use:
 
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
+    if getattr(env_cfg.commands, 'forward_only', False) and args.play_speed is not None and args.play_speed < 0:
+        raise ValueError('this task supports forward/standing playback only')
     zero_residual = getattr(args, "zero_residual", False)
     if zero_residual:
         if not hasattr(env_cfg.control, "residual_enabled"):
@@ -216,6 +218,9 @@ def play(args):
     dt = env_cfg.sim.dt * env_cfg.control.decimation
     video_fps = 1.0 / (2 * dt)
     profile = VEL_PROFILE
+    configured_profile = getattr(env_cfg.env, 'play_speed_profile', None)
+    if configured_profile is not None:
+        profile = [(max(1, round(5.0 / dt)), float(speed)) for speed in configured_profile]
     if args.play_speed is not None:
         if not math.isfinite(args.play_speed) or not math.isfinite(args.play_duration) or args.play_duration <= 0:
             raise ValueError("playback speed must be finite and duration must be positive")

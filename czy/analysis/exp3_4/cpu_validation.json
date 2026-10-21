@@ -1,0 +1,36 @@
+{
+  "success": true,
+  "kind": "CPU only, no Isaac Gym simulation",
+  "checkpoint_internal_iter": 26997,
+  "actor_shape": [
+    2,
+    29
+  ],
+  "critic_shape": [
+    2,
+    1
+  ],
+  "single_observation": 98,
+  "history": 6468,
+  "initial_stand_steps": [
+    203,
+    299
+  ],
+  "scheduler_environments": 16,
+  "scheduler_steps": 4001,
+  "transitions_first_env": [
+    283,
+    1177,
+    1381,
+    2083,
+    2287,
+    2977,
+    3210,
+    3835
+  ],
+  "fresh_discriminator_enforced": true,
+  "wrong_checkpoint_rejected": true,
+  "reference_interpolation_and_standing_checked": true,
+  "phase_frames": 63,
+  "demo_frames": 351
+}

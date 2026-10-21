@@ -1,0 +1,33 @@
+{
+  "experiment": "exp3.4",
+  "segment_weights": {
+    "walk_forward": 1.0
+  },
+  "files": {
+    "ref_lib_v1_2_exp34_phase.pt": {
+      "source": "ref_lib_v1_2_exp33_phase.pt",
+      "source_sha256": "af1103ce7ec1167895bad96fbf1999817017f384ef4fc0bd3a756571808c9ee9",
+      "sha256": "3209e00933a6fd954e666f6547801db83c60726d055577e7fe6b6cdb4cb03592",
+      "frames": 63,
+      "fps": 50.0
+    },
+    "amp_v1_2_exp34.pt": {
+      "source": "amp_v1_2_exp33.pt",
+      "source_sha256": "672d7a8a8034c01bd6657a67ebbfb040ee4e5acab9052f5ade0e1cabe46451d1",
+      "sha256": "a9c3d3b9f8d099d0f4cb345e186d33150bc29bfc0484b96e6273485eba3e0eba",
+      "frames": 351,
+      "fps": 50.0
+    }
+  },
+  "transfer_source": {
+    "file": "model_26998.pt",
+    "local_path": "czy/data/exp2.4a_cont2/model_26998.pt",
+    "experiment": "exp2.4a-cont2",
+    "sha256": "f1838ebe07007d1f65380d67db7915a23c3793aa2bb2786d1006d7b1f03664a5",
+    "bytes": 23350978,
+    "internal_iter": 26997,
+    "completed_iterations": 26998,
+    "fresh_discriminator": true,
+    "fresh_optimizers": true
+  }
+}
