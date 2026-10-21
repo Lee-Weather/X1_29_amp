@@ -1,0 +1,428 @@
+{
+  "stand10": {
+    "rows": 1000,
+    "columns": 445,
+    "finite": true,
+    "duration_s": 10.0,
+    "resets": 6,
+    "first_termination_s": 1.61,
+    "delta_q_abs_max_rad": 0.0,
+    "target_reference_abs_max_rad": 0.0,
+    "commanded_identity_abs_max_rad": 0.0,
+    "observation_command_abs_error_max": 0.0,
+    "physical_target_violations": 0,
+    "reference_joint_rms_rad": 0.04260773427569045,
+    "reference_joint_l2_mean_rad": 0.2137581107813212,
+    "pd_target_clip_fraction": 0.0,
+    "torque_clip_joint_substeps": 0,
+    "roll_peak_deg": 0.7869972232540985,
+    "pitch_peak_deg": 46.39704724963495,
+    "sole_height_min_m": [
+      -0.0002727583050727,
+      -0.0002620592713356
+    ],
+    "stages": [
+      {
+        "stage": 0,
+        "requested": 0.0,
+        "applied_mean": 0.0,
+        "vx_mean": 0.24565623816121798,
+        "vx_steady_mean": 0.26376291650302036,
+        "resets": 6,
+        "roll_peak_deg": 0.7869972232540985,
+        "pitch_peak_deg": 46.39704724963495
+      }
+    ],
+    "joint_stats": [
+      {
+        "joint": "left_ankle_pitch_joint",
+        "rms_error_rad": 0.12948815007936496,
+        "max_error_rad": 0.20025102794170382
+      },
+      {
+        "joint": "right_ankle_pitch_joint",
+        "rms_error_rad": 0.12781221250089086,
+        "max_error_rad": 0.20225320756435403
+      },
+      {
+        "joint": "left_knee_pitch_joint",
+        "rms_error_rad": 0.07380002101887664,
+        "max_error_rad": 0.09769290685653692
+      },
+      {
+        "joint": "right_knee_pitch_joint",
+        "rms_error_rad": 0.07344453524816409,
+        "max_error_rad": 0.09735399484634405
+      },
+      {
+        "joint": "left_hip_pitch_joint",
+        "rms_error_rad": 0.04691009621848881,
+        "max_error_rad": 0.11247584223747253
+      },
+      {
+        "joint": "right_hip_pitch_joint",
+        "rms_error_rad": 0.04415861657084218,
+        "max_error_rad": 0.10984840989112854
+      },
+      {
+        "joint": "lumbar_pitch_joint",
+        "rms_error_rad": 0.04380527726928799,
+        "max_error_rad": 0.08940335549414159
+      },
+      {
+        "joint": "right_elbow_pitch_joint",
+        "rms_error_rad": 0.019188159293040217,
+        "max_error_rad": 0.022987663745880182
+      },
+      {
+        "joint": "right_shoulder_pitch_joint",
+        "rms_error_rad": 0.018187498237794437,
+        "max_error_rad": 0.0215088743716478
+      },
+      {
+        "joint": "left_ankle_roll_joint",
+        "rms_error_rad": 0.018156069695443162,
+        "max_error_rad": 0.0500081628561019
+      },
+      {
+        "joint": "right_ankle_roll_joint",
+        "rms_error_rad": 0.01808808801559226,
+        "max_error_rad": 0.046703178435564
+      },
+      {
+        "joint": "left_elbow_pitch_joint",
+        "rms_error_rad": 0.016440439315326908,
+        "max_error_rad": 0.020295768976211603
+      },
+      {
+        "joint": "left_shoulder_pitch_joint",
+        "rms_error_rad": 0.014532087764743452,
+        "max_error_rad": 0.029401982901617902
+      },
+      {
+        "joint": "left_hip_yaw_joint",
+        "rms_error_rad": 0.012923647387887002,
+        "max_error_rad": 0.031646937131881714
+      },
+      {
+        "joint": "left_hip_roll_joint",
+        "rms_error_rad": 0.012599152089636871,
+        "max_error_rad": 0.03469391539692881
+      },
+      {
+        "joint": "right_hip_roll_joint",
+        "rms_error_rad": 0.011755984670031989,
+        "max_error_rad": 0.0386619828641415
+      },
+      {
+        "joint": "right_hip_yaw_joint",
+        "rms_error_rad": 0.011589387444752765,
+        "max_error_rad": 0.02796250581741333
+      },
+      {
+        "joint": "left_shoulder_roll_joint",
+        "rms_error_rad": 0.010410373356685657,
+        "max_error_rad": 0.017738737165927804
+      },
+      {
+        "joint": "lumbar_roll_joint",
+        "rms_error_rad": 0.004766787740639504,
+        "max_error_rad": 0.0132748167961835
+      },
+      {
+        "joint": "right_shoulder_roll_joint",
+        "rms_error_rad": 0.00413187068721482,
+        "max_error_rad": 0.009047057479619904
+      },
+      {
+        "joint": "left_wrist_roll_joint",
+        "rms_error_rad": 0.0040287800467623015,
+        "max_error_rad": 0.0069374088197946
+      },
+      {
+        "joint": "right_wrist_roll_joint",
+        "rms_error_rad": 0.003985374999274772,
+        "max_error_rad": 0.0067447889596223
+      },
+      {
+        "joint": "left_wrist_pitch_joint",
+        "rms_error_rad": 0.002547970677649292,
+        "max_error_rad": 0.0040063932538032
+      },
+      {
+        "joint": "right_wrist_pitch_joint",
+        "rms_error_rad": 0.002054092282094237,
+        "max_error_rad": 0.0032183851581066
+      },
+      {
+        "joint": "left_shoulder_yaw_joint",
+        "rms_error_rad": 0.0017221442357594828,
+        "max_error_rad": 0.002482384443282998
+      },
+      {
+        "joint": "lumbar_yaw_joint",
+        "rms_error_rad": 0.0013131477444987744,
+        "max_error_rad": 0.0053648850880563
+      },
+      {
+        "joint": "right_shoulder_yaw_joint",
+        "rms_error_rad": 0.0011388347069411855,
+        "max_error_rad": 0.0013918429613114236
+      },
+      {
+        "joint": "right_elbow_yaw_joint",
+        "rms_error_rad": 0.0009029893161665379,
+        "max_error_rad": 0.001325559685938
+      },
+      {
+        "joint": "left_elbow_yaw_joint",
+        "rms_error_rad": 0.0008283429694666476,
+        "max_error_rad": 0.0012232664739713
+      }
+    ],
+    "video": {
+      "fps": 50.0,
+      "frames": 500,
+      "seconds": 10.0,
+      "decoded_first_middle_last": true
+    }
+  },
+  "profile30": {
+    "rows": 3000,
+    "columns": 445,
+    "finite": true,
+    "duration_s": 30.0,
+    "resets": 18,
+    "first_termination_s": 1.61,
+    "delta_q_abs_max_rad": 0.0,
+    "target_reference_abs_max_rad": 0.0,
+    "commanded_identity_abs_max_rad": 0.0,
+    "observation_command_abs_error_max": 0.0,
+    "physical_target_violations": 0,
+    "reference_joint_rms_rad": 0.044941898920659286,
+    "reference_joint_l2_mean_rad": 0.22147946513322225,
+    "pd_target_clip_fraction": 0.0,
+    "torque_clip_joint_substeps": 0,
+    "roll_peak_deg": 0.7869972232540985,
+    "pitch_peak_deg": 46.66623719503672,
+    "sole_height_min_m": [
+      -0.0002727583050727,
+      -0.0002620592713356
+    ],
+    "stages": [
+      {
+        "stage": 0,
+        "requested": 0.0,
+        "applied_mean": 0.0,
+        "vx_mean": 0.24554603526168284,
+        "vx_steady_mean": 0.28625851080585446,
+        "resets": 3,
+        "roll_peak_deg": 0.7869972232540985,
+        "pitch_peak_deg": 46.39704724963495
+      },
+      {
+        "stage": 1,
+        "requested": 0.4,
+        "applied_mean": 0.03360000050067902,
+        "vx_mean": 0.2529177116291239,
+        "vx_steady_mean": 0.28957070180978806,
+        "resets": 3,
+        "roll_peak_deg": 0.7869972232540985,
+        "pitch_peak_deg": 45.9542452630972
+      },
+      {
+        "stage": 2,
+        "requested": 0.6,
+        "applied_mean": 0.05040000200271606,
+        "vx_mean": 0.25297079640492937,
+        "vx_steady_mean": 0.28533266839403837,
+        "resets": 3,
+        "roll_peak_deg": 0.7869972232540985,
+        "pitch_peak_deg": 46.17149317660874
+      },
+      {
+        "stage": 3,
+        "requested": 0.0,
+        "applied_mean": 0.0,
+        "vx_mean": 0.24559307132527375,
+        "vx_steady_mean": 0.27172655679118063,
+        "resets": 3,
+        "roll_peak_deg": 0.7869972232540985,
+        "pitch_peak_deg": 46.39704724963495
+      },
+      {
+        "stage": 4,
+        "requested": -0.2,
+        "applied_mean": -0.016800000250339505,
+        "vx_mean": 0.2518865405084207,
+        "vx_steady_mean": 0.26894434813242585,
+        "resets": 3,
+        "roll_peak_deg": 0.7869972232540985,
+        "pitch_peak_deg": 46.66623719503672
+      },
+      {
+        "stage": 5,
+        "requested": 0.0,
+        "applied_mean": 0.0,
+        "vx_mean": 0.24615822258457684,
+        "vx_steady_mean": 0.24979657805357305,
+        "resets": 3,
+        "roll_peak_deg": 0.7869972232540985,
+        "pitch_peak_deg": 46.39704724963495
+      }
+    ],
+    "joint_stats": [
+      {
+        "joint": "right_ankle_pitch_joint",
+        "rms_error_rad": 0.1314144941892618,
+        "max_error_rad": 0.3252189978957177
+      },
+      {
+        "joint": "left_ankle_pitch_joint",
+        "rms_error_rad": 0.13108375436801734,
+        "max_error_rad": 0.293922059237957
+      },
+      {
+        "joint": "left_knee_pitch_joint",
+        "rms_error_rad": 0.07501213972346953,
+        "max_error_rad": 0.1177901029586792
+      },
+      {
+        "joint": "right_knee_pitch_joint",
+        "rms_error_rad": 0.07496988382528998,
+        "max_error_rad": 0.14368909597396856
+      },
+      {
+        "joint": "left_hip_pitch_joint",
+        "rms_error_rad": 0.059676741181296226,
+        "max_error_rad": 0.36905303597450256
+      },
+      {
+        "joint": "right_hip_pitch_joint",
+        "rms_error_rad": 0.055951257680598214,
+        "max_error_rad": 0.37290915846824646
+      },
+      {
+        "joint": "lumbar_pitch_joint",
+        "rms_error_rad": 0.04205635487999071,
+        "max_error_rad": 0.08940335549414159
+      },
+      {
+        "joint": "right_elbow_pitch_joint",
+        "rms_error_rad": 0.02290652281641933,
+        "max_error_rad": 0.08767014741897583
+      },
+      {
+        "joint": "right_ankle_roll_joint",
+        "rms_error_rad": 0.020921085386455436,
+        "max_error_rad": 0.0855702143162488
+      },
+      {
+        "joint": "left_hip_yaw_joint",
+        "rms_error_rad": 0.020686531882289912,
+        "max_error_rad": 0.11801199615001681
+      },
+      {
+        "joint": "right_shoulder_pitch_joint",
+        "rms_error_rad": 0.020180099700112468,
+        "max_error_rad": 0.0820979401469231
+      },
+      {
+        "joint": "left_elbow_pitch_joint",
+        "rms_error_rad": 0.019252342758186467,
+        "max_error_rad": 0.0995539128780365
+      },
+      {
+        "joint": "left_ankle_roll_joint",
+        "rms_error_rad": 0.018941888391427995,
+        "max_error_rad": 0.077939050272107
+      },
+      {
+        "joint": "right_hip_yaw_joint",
+        "rms_error_rad": 0.017942297055219696,
+        "max_error_rad": 0.1054619401693345
+      },
+      {
+        "joint": "left_shoulder_pitch_joint",
+        "rms_error_rad": 0.01545713540412476,
+        "max_error_rad": 0.060961792943999206
+      },
+      {
+        "joint": "lumbar_yaw_joint",
+        "rms_error_rad": 0.014447641706404639,
+        "max_error_rad": 0.11304690688848501
+      },
+      {
+        "joint": "left_shoulder_roll_joint",
+        "rms_error_rad": 0.013908598114899551,
+        "max_error_rad": 0.10308603942394248
+      },
+      {
+        "joint": "left_wrist_pitch_joint",
+        "rms_error_rad": 0.01342336248107624,
+        "max_error_rad": 0.12277274858206512
+      },
+      {
+        "joint": "right_hip_roll_joint",
+        "rms_error_rad": 0.011995083320415816,
+        "max_error_rad": 0.050133042037487
+      },
+      {
+        "joint": "left_hip_roll_joint",
+        "rms_error_rad": 0.011664073671074054,
+        "max_error_rad": 0.03469391539692881
+      },
+      {
+        "joint": "right_shoulder_roll_joint",
+        "rms_error_rad": 0.010558297953950297,
+        "max_error_rad": 0.08055784553289409
+      },
+      {
+        "joint": "left_shoulder_yaw_joint",
+        "rms_error_rad": 0.010018145305462278,
+        "max_error_rad": 0.08900366409216079
+      },
+      {
+        "joint": "left_wrist_roll_joint",
+        "rms_error_rad": 0.008595708368154703,
+        "max_error_rad": 0.0703555080108344
+      },
+      {
+        "joint": "right_wrist_pitch_joint",
+        "rms_error_rad": 0.008284925565766531,
+        "max_error_rad": 0.07374675106257189
+      },
+      {
+        "joint": "lumbar_roll_joint",
+        "rms_error_rad": 0.006020806378041567,
+        "max_error_rad": 0.0441419940907508
+      },
+      {
+        "joint": "right_wrist_roll_joint",
+        "rms_error_rad": 0.005094855178460572,
+        "max_error_rad": 0.0314808678813278
+      },
+      {
+        "joint": "right_shoulder_yaw_joint",
+        "rms_error_rad": 0.004792387725320967,
+        "max_error_rad": 0.041462317109108
+      },
+      {
+        "joint": "left_elbow_yaw_joint",
+        "rms_error_rad": 0.004576447228091964,
+        "max_error_rad": 0.0442609228193759
+      },
+      {
+        "joint": "right_elbow_yaw_joint",
+        "rms_error_rad": 0.0014768289291825411,
+        "max_error_rad": 0.021254456602037
+      }
+    ],
+    "video": {
+      "fps": 50.0,
+      "frames": 1500,
+      "seconds": 30.0,
+      "decoded_first_middle_last": true
+    }
+  }
+}

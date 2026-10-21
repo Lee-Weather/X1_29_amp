@@ -119,6 +119,18 @@ if joystick_use:
 
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
+    zero_residual = getattr(args, "zero_residual", False)
+    if zero_residual:
+        if not hasattr(env_cfg.control, "residual_enabled"):
+            raise ValueError("--zero_residual requires a reference-residual task")
+        if args.checkpoint_url_b64 is not None or args.ckpt_path is not None or args.resume:
+            raise ValueError("zero-residual playback does not load a checkpoint")
+        env_cfg.control.residual_enabled = False
+        env_cfg.domain_rand.add_lag = False
+        env_cfg.domain_rand.add_dof_lag = False
+        env_cfg.domain_rand.add_dof_pos_vel_lag = False
+        env_cfg.domain_rand.add_imu_lag = False
+        env_cfg.noise.add_noise = False
     from humanoid.utils.evaluation import configure_evaluation
     mode = args.eval_mode
     if mode is None:
@@ -167,7 +179,12 @@ def play(args):
         print(f"[gm] checkpoint ready: {gm_ckpt_path}")
 
     # load policy
-    if gm_mode:
+    if zero_residual:
+        from types import SimpleNamespace
+        ppo_runner = SimpleNamespace(alg=None)
+        env.reset()
+        policy = lambda observations: torch.zeros(env.num_envs, env.num_actions, device=env.device)
+    elif gm_mode:
         # 下载路径不在 exported_data 下，绕过 make_alg_runner 内部 resume，手动加载
         train_cfg.runner.resume = False
         ppo_runner, train_cfg, _ = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg, log_root=None)
@@ -175,14 +192,25 @@ def play(args):
     else:
         train_cfg.runner.resume = True
         ppo_runner, train_cfg, _ = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
-    policy = ppo_runner.get_inference_policy(device=env.device)
+    if not zero_residual:
+        policy = ppo_runner.get_inference_policy(device=env.device)
     
     # export policy as a jit module (used to run it from C++)
     current_date_str = datetime.now().strftime('%Y-%m-%d')
     current_time_str = datetime.now().strftime('%H-%M-%S')
-    if EXPORT_POLICY:
+    if EXPORT_POLICY and not zero_residual:
         path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, '0_exported', 'policies')
-        export_policy_as_jit(ppo_runner.alg.actor_critic, path)
+        if getattr(env_cfg.env, "observe_reference_pose", False):
+            from humanoid.scripts.export_policy_dh import ExportedDH
+            from humanoid.utils.residual_control import export_residual_control_spec
+            actor = ppo_runner.alg.actor_critic
+            os.makedirs(path, exist_ok=True)
+            ExportedDH(actor.actor, actor.long_history, actor.state_estimator,
+                       actor.num_short_obs, actor.in_channels, actor.num_proprio_obs).export(
+                           os.path.join(path, "policy_dh.jit"))
+            export_residual_control_spec(env_cfg, path)
+        else:
+            export_policy_as_jit(ppo_runner.alg.actor_critic, path)
         print('Exported policy as jit script to: ', path)
 
     dt = env_cfg.sim.dt * env_cfg.control.decimation
@@ -422,7 +450,7 @@ def play(args):
     metadata = dict(task=args.task, eval_mode=mode, seed=seed, control_dt=dt,
                     physics_dt=env_cfg.sim.dt, video_fps=video_fps,
                     profile=profile, steps=total_play_steps,
-                    checkpoint=args.checkpoint, load_run=args.load_run,
+                    checkpoint=args.checkpoint, load_run=args.load_run, zero_residual=zero_residual,
                     checkpoint_path=getattr(ppo_runner, "loaded_checkpoint_path", None),
                     resets=sum(diag["done"]), timeouts=sum(diag["timeout"]),
                     success=not any(diag["done"]), torque_clip_count=clip_count,

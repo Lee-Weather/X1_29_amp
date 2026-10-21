@@ -188,6 +188,8 @@ def get_args():
          "help": "Optional constant vx command for playback; default uses the six-stage profile."},
         {"name": "--play_duration", "type": float, "default": 20.0,
          "help": "Duration in simulation seconds when --play_speed is supplied."},
+        {"name": "--zero_residual", "action": "store_true", "default": False,
+         "help": "Replay a reference-residual task with zero policy residual and no checkpoint."},
         {
             "name": "--task",
             "type": str,

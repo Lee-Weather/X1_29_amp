@@ -1,0 +1,115 @@
+{
+  "finished": true,
+  "cases": {
+    "stand10": {
+      "returncode": 0,
+      "success": true,
+      "log": "/home/robot/czy/exp1/exp_20261021_094601/x1_exp33_zero_residual/replay_logs/stand10.log",
+      "command": [
+        "/home/robot/Anaconda/envs/F1/bin/python",
+        "-u",
+        "humanoid/scripts/play.py",
+        "--task=x1_dh_stand_v12_exp33",
+        "--zero_residual",
+        "--headless",
+        "--num_envs=1",
+        "--seed=123145",
+        "--eval_mode=nominal_no_push",
+        "--run_name=exp33_zero_stand10",
+        "--play_speed=0",
+        "--play_duration=10"
+      ],
+      "directory": "/home/robot/czy/exp1/exp_20261021_094601/x1_exp33_zero_residual/replay_results/stand10",
+      "metadata": {
+        "task": "x1_dh_stand_v12_exp33",
+        "eval_mode": "nominal_no_push",
+        "seed": 123145,
+        "control_dt": 0.01,
+        "physics_dt": 0.001,
+        "video_fps": 50.0,
+        "profile": [
+          [
+            1000,
+            0.0
+          ]
+        ],
+        "steps": 1000,
+        "checkpoint": null,
+        "load_run": null,
+        "zero_residual": true,
+        "checkpoint_path": null,
+        "resets": 6,
+        "timeouts": 0,
+        "success": false,
+        "torque_clip_count": 0,
+        "pushes": false,
+        "noise": false
+      }
+    },
+    "profile30": {
+      "returncode": 0,
+      "success": true,
+      "log": "/home/robot/czy/exp1/exp_20261021_094601/x1_exp33_zero_residual/replay_logs/profile30.log",
+      "command": [
+        "/home/robot/Anaconda/envs/F1/bin/python",
+        "-u",
+        "humanoid/scripts/play.py",
+        "--task=x1_dh_stand_v12_exp33",
+        "--zero_residual",
+        "--headless",
+        "--num_envs=1",
+        "--seed=123145",
+        "--eval_mode=nominal_no_push",
+        "--run_name=exp33_zero_profile30"
+      ],
+      "directory": "/home/robot/czy/exp1/exp_20261021_094601/x1_exp33_zero_residual/replay_results/profile30",
+      "metadata": {
+        "task": "x1_dh_stand_v12_exp33",
+        "eval_mode": "nominal_no_push",
+        "seed": 123145,
+        "control_dt": 0.01,
+        "physics_dt": 0.001,
+        "video_fps": 50.0,
+        "profile": [
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            0.4
+          ],
+          [
+            500,
+            0.6
+          ],
+          [
+            500,
+            0.0
+          ],
+          [
+            500,
+            -0.2
+          ],
+          [
+            500,
+            0.0
+          ]
+        ],
+        "steps": 3000,
+        "checkpoint": null,
+        "load_run": null,
+        "zero_residual": true,
+        "checkpoint_path": null,
+        "resets": 18,
+        "timeouts": 0,
+        "success": false,
+        "torque_clip_count": 0,
+        "pushes": false,
+        "noise": false
+      }
+    }
+  },
+  "started_at": "2026-10-21T09:48:43.662268+08:00",
+  "finished_at": "2026-10-21T09:55:18.703171+08:00"
+}

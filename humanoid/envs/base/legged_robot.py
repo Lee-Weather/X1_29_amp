@@ -713,7 +713,7 @@ class LeggedRobot(BaseTask):
             [torch.Tensor]: Torques sent to the simulation
         """
         # pd controller
-        actions_scaled = actions * self.cfg.control.action_scale
+        actions_scaled = self._pd_command_from_actions(actions)
         if self.cfg.domain_rand.add_lag:
             self.lag_buffer[:,:,1:] = self.lag_buffer[:,:,:self.cfg.domain_rand.lag_timesteps_range[1]].clone()
             self.lag_buffer[:,:,0] = actions_scaled.clone()
@@ -748,6 +748,10 @@ class LeggedRobot(BaseTask):
             torques *= self.torque_multi
             
         return torch.clip(torques, -self.torque_limits, self.torque_limits)
+
+    def _pd_command_from_actions(self, actions):
+        """Command stored in the execution-delay buffer (legacy: angle offset)."""
+        return actions * self.cfg.control.action_scale
 
     def _pd_position_target(self):
         """Position target after action lag and motor calibration offset."""

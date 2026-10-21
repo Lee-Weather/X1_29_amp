@@ -103,8 +103,10 @@ def export_policy(args):
     dir_name = "policy_dh.jit"
     path = os.path.join(root_path, dir_name)
     exported_policy.export(path)
+    from humanoid.utils.residual_control import export_residual_control_spec
+    export_residual_control_spec(env_cfg, root_path)
     print("Export policy to:", path)
-    
+
 if __name__ == '__main__':
     EXPORT_POLICY = True
     args = get_args()
@@ -113,4 +115,3 @@ if __name__ == '__main__':
     if args.checkpoint == None:
         args.checkpoint = -1
     export_policy(args)
-    

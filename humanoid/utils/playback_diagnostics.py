@@ -72,6 +72,13 @@ def capture_playback_step(env, infos, rewards, dones, algorithm, requested, stag
             row["ref_pos_" + name] = scalar(saved["ref_dof_pos"][:, index])
     if "ref_roll_pitch" in saved:
         row.update(ref_roll=scalar(saved["ref_roll_pitch"][:, 0]), ref_pitch=scalar(saved["ref_roll_pitch"][:, 1]))
+    for prefix in ("delta_q", "pd_target_commanded", "pd_target_delayed"):
+        if prefix in saved:
+            for index, name in enumerate(env.dof_names):
+                row[prefix + "_" + name] = scalar(saved[prefix][:, index])
+    if "sole_height" in saved:
+        row.update(sole_height_l=scalar(saved["sole_height"][:, 0]),
+                   sole_height_r=scalar(saved["sole_height"][:, 1]))
     for name in ("action_lag", "dof_lag"):
         if name in saved:
             row[name + "_substeps"] = scalar(saved[name])

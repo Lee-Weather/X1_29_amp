@@ -48,6 +48,7 @@ class ActorCriticDH(nn.Module):
                         stride_size=[3, 2],
                         lh_output_dim=64,
                         init_noise_std=1.0,
+                        zero_init_actor_output=False,
                         activation = nn.ELU(),
                         **kwargs):
         if kwargs:
@@ -75,6 +76,9 @@ class ActorCriticDH(nn.Module):
                 actor_layers.append(nn.Linear(actor_hidden_dims[l], actor_hidden_dims[l + 1]))
                 actor_layers.append(activation)
         self.actor = nn.Sequential(*actor_layers)
+        if zero_init_actor_output:
+            nn.init.zeros_(self.actor[-1].weight)
+            nn.init.zeros_(self.actor[-1].bias)
 
         # Value function
         critic_layers = []

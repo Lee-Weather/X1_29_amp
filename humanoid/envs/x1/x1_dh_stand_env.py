@@ -595,6 +595,11 @@ class X1DHStandEnv(LeggedRobot):
         if self.cfg.env.num_single_obs == 48:
             stand_command = (torch.norm(self.commands[:, :3], dim=1, keepdim=True) <= self.cfg.commands.stand_com_threshold)
             obs_buf = torch.cat((obs_buf, stand_command),dim=1)
+
+        if getattr(self.cfg.env, "observe_reference_pose", False):
+            # Deterministic reference suffix; its noise entries remain zero.
+            reference = (self.ref_dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos
+            obs_buf = torch.cat((obs_buf, reference), dim=-1)
             
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements

@@ -1,0 +1,72 @@
+{
+  "method": "smooth collision-sole lower envelope; no joint/rotation/XY changes",
+  "model": "resources/robots/x1/mjcf/x1_29dof_scene.xml",
+  "model_sha256": "98b1eb8bb1ad7b675d2bab0cfa18e2bcba1bfa8cedf23856a40abb33e21d9424",
+  "clearance_m": 0.001,
+  "smoothing_m": 0.001,
+  "stand_root_height_m": 0.6160302675369499,
+  "sole_normals_local": [
+    [
+      1.3065637176623568e-06,
+      0.999999999999121,
+      -2.2416817335724204e-07
+    ],
+    [
+      1.26015351775699e-06,
+      -0.9999999999991813,
+      -2.2416817335724204e-07
+    ]
+  ],
+  "collision_hull_vertices": [
+    1089,
+    1089
+  ],
+  "files": {
+    "ref_lib_v1_2_exp33_phase.pt": {
+      "source": "ref_lib_v1_2_phase.pt",
+      "source_sha256": "4c7e5346bd4dacfc6b73faa0288221e985a836147884b9cc9f00a9abb342f81e",
+      "sha256": "af1103ce7ec1167895bad96fbf1999817017f384ef4fc0bd3a756571808c9ee9",
+      "segments": {
+        "walk_forward": {
+          "frames": 63,
+          "original_sole_min_m": -0.051990983796524795,
+          "corrected_sole_min_m": 0.0010761009537548494,
+          "root_z_correction_min_m": 0.03564229999137509,
+          "root_z_correction_max_m": 0.05359768332682726,
+          "root_z_correction_mean_m": 0.04639072489884436
+        },
+        "walk_backward": {
+          "frames": 73,
+          "original_sole_min_m": -0.03122138881036797,
+          "corrected_sole_min_m": 0.0012327950329496448,
+          "root_z_correction_min_m": 0.026278580020545915,
+          "root_z_correction_max_m": 0.0329002695402443,
+          "root_z_correction_mean_m": 0.03012282982951123
+        }
+      }
+    },
+    "amp_v1_2_exp33.pt": {
+      "source": "amp_v1_2.pt",
+      "source_sha256": "c6facb0146bbf41ac69e45ac3956de2d0e5b0c96c06f8bad8917494f0d86b7ab",
+      "sha256": "672d7a8a8034c01bd6657a67ebbfb040ee4e5acab9052f5ade0e1cabe46451d1",
+      "segments": {
+        "walk_forward": {
+          "frames": 351,
+          "original_sole_min_m": -0.06439749455940985,
+          "corrected_sole_min_m": 0.001439836656682611,
+          "root_z_correction_min_m": 0.021416216502841777,
+          "root_z_correction_max_m": 0.0659851792979553,
+          "root_z_correction_mean_m": 0.04076415654967714
+        },
+        "walk_backward": {
+          "frames": 267,
+          "original_sole_min_m": -0.039136772601798396,
+          "corrected_sole_min_m": 0.001496786323273637,
+          "root_z_correction_min_m": 0.024141309441814803,
+          "root_z_correction_max_m": 0.04082061240141699,
+          "root_z_correction_mean_m": 0.03211228753598207
+        }
+      }
+    }
+  }
+}

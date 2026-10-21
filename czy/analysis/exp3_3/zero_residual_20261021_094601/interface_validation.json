@@ -1,0 +1,17 @@
+{
+  "success": true,
+  "single_obs": 127,
+  "total_obs": 8382,
+  "actions_shape": [
+    2,
+    29
+  ],
+  "critic_shape": [
+    2,
+    1
+  ],
+  "initial_mean_abs_max": 0.0,
+  "jit_abs_error_max": 0.0,
+  "trained_checkpoint": false,
+  "torch_version": "1.12.1+cu113"
+}

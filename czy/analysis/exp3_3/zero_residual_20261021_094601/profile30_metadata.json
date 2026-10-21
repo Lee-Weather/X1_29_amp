@@ -1,0 +1,45 @@
+{
+  "task": "x1_dh_stand_v12_exp33",
+  "eval_mode": "nominal_no_push",
+  "seed": 123145,
+  "control_dt": 0.01,
+  "physics_dt": 0.001,
+  "video_fps": 50.0,
+  "profile": [
+    [
+      500,
+      0.0
+    ],
+    [
+      500,
+      0.4
+    ],
+    [
+      500,
+      0.6
+    ],
+    [
+      500,
+      0.0
+    ],
+    [
+      500,
+      -0.2
+    ],
+    [
+      500,
+      0.0
+    ]
+  ],
+  "steps": 3000,
+  "checkpoint": null,
+  "load_run": null,
+  "zero_residual": true,
+  "checkpoint_path": null,
+  "resets": 18,
+  "timeouts": 0,
+  "success": false,
+  "torque_clip_count": 0,
+  "pushes": false,
+  "noise": false
+}

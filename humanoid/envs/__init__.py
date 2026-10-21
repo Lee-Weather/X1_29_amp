@@ -40,6 +40,8 @@ from .x1.x1_dh_stand_v12_exp31_config import X1DHStandV12Exp31Cfg, X1DHStandV12E
 from .x1.x1_dh_stand_v12_exp31_env import X1DHStandV12Exp31Env
 from .x1.x1_dh_stand_v12_exp32_config import X1DHStandV12Exp32Cfg, X1DHStandV12Exp32CfgPPO
 from .x1.x1_dh_stand_v12_exp32_env import X1DHStandV12Exp32Env
+from .x1.x1_dh_stand_v12_exp33_config import X1DHStandV12Exp33Cfg, X1DHStandV12Exp33CfgPPO
+from .x1.x1_dh_stand_v12_exp33_env import X1DHStandV12Exp33Env
 
 from .x1.x1_dh_stand_env import X1DHStandEnv
 
@@ -51,3 +53,6 @@ task_registry.register("x1_dh_stand_v12_exp31", X1DHStandV12Exp31Env,
                        X1DHStandV12Exp31Cfg(), X1DHStandV12Exp31CfgPPO())
 task_registry.register("x1_dh_stand_v12_exp32", X1DHStandV12Exp32Env,
                        X1DHStandV12Exp32Cfg(), X1DHStandV12Exp32CfgPPO())
+
+task_registry.register("x1_dh_stand_v12_exp33", X1DHStandV12Exp33Env,
+                       X1DHStandV12Exp33Cfg(), X1DHStandV12Exp33CfgPPO())
