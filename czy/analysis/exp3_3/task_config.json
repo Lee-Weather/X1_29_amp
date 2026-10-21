@@ -1,0 +1,32 @@
+{
+  "taskBaseInfo": {
+    "projectId": "PRO_20261021_007",
+    "taskType": "1",
+    "trainType": "1",
+    "taskName": "exp3.3-fresh-reference-residual-6000",
+    "taskDescription": "Reference joint targets + bounded angle residuals; 127 actor features; nominal calibrated domain, no delays/noise/pushes; fresh all networks 6000 updates. Zero-residual standing failed; policy must learn balance.",
+    "taskTag": [
+      "exp3.3",
+      "v1.2",
+      "6000"
+    ],
+    "goodsId": "ESKU000001",
+    "goodsBackId": "SKUSL000002",
+    "gpuNum": 1,
+    "imageId": "BJX00000001",
+    "imageVersion": "V000412",
+    "personalDataPath": ""
+  },
+  "taskCodeInfo": {
+    "codeType": "2",
+    "codeUrl": "[{\"codeUrl\": \"https://github.com/Lee-Weather/X1_29_amp\", \"versionType\": \"1\", \"versionName\": \"codex/exp3-3\"}]",
+    "mainCodeUri": "X1_29_amp/humanoid/scripts/train.py",
+    "hparamsPath": "X1_29_amp/humanoid/envs/x1/x1_dh_stand_v12_exp33_config.py",
+    "startScript": "gm-run X1_29_amp/humanoid/scripts/train.py --task=x1_dh_stand_v12_exp33 --headless --num_envs=4096 --seed=5 --max_iterations=6000 --run_name=exp3_3",
+    "isOpen": "1"
+  },
+  "runtimeReminderConfig": {
+    "enableRuntimeReminder": false,
+    "reminderDurations": []
+  }
+}
