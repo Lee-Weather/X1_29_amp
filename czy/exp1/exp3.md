@@ -15,7 +15,7 @@
 | exp3.2 | 2026-10-20 | 从零 6000 轮完成；两模式回放均零终止但几乎不执行前后速度，三件套已取回 | 失败（跟速未达标） | TASK_20261020_144 | lim…29ym@maxxspace.com（第 9 个） | model_6000.pt |
 | exp3.3 | 2026-10-21 | 6000轮完成；最终六段回放6次跌倒，后退指令仍向前 | 失败 | TASK_20261021_020 | lim…th560d@maxxspace.com（第10个） | model_6000.pt |
 | exp3.4 | 2026-10-21 | 成熟exp2.4a-cont2迁移至B3，仅站立/前进；恢复98维观测及default+policy控制，新增12000轮；服务器回放和200轮冒烟通过 | 训练中 | TASK_20261021_068 | limxmv4xnjtlno3gsm@maxxspace.com | 底模model_26998.pt，目标model_38998.pt |
-| exp3.5 | 2026-10-22 | 恢复行走姿态/累计航向约束；上肢腰Huber监督、渐进目标边界；健康底模迁移 | 待训练 | 待创建 | 待选择 | 底模model_26998.pt，目标model_32998.pt |
+| exp3.5 | 2026-10-22 | 恢复行走姿态/累计航向约束；上肢腰Huber监督、渐进目标边界；健康底模迁移 | 训练中 | TASK_20261022_065 | limxmv4xopmuth560d@maxxspace.com | 底模model_26998.pt，目标model_32998.pt |
 
 ---
 
@@ -1075,7 +1075,7 @@ exp3.4最新model_38700在60秒无摔倒，但累计偏航2.134rad；右肩yaw�
 
 ### 5. 训练参数
 
-健康exp2.4a-cont2 model_26998初始化actor/critic/estimator/std，D和所有优化器重新初始化。task=x1_dh_stand_v12_exp35，计划4096env、seed5、新增6000轮，最终model_32998.pt。云端账号待选择、任务未创建。
+健康exp2.4a-cont2 model_26998初始化actor/critic/estimator/std，D和所有优化器重新初始化。task=x1_dh_stand_v12_exp35，计划4096env、seed5、新增6000轮，最终model_32998.pt。云端账号limxmv4xopmuth560d@maxxspace.com（userId4567），Task ID TASK_20261022_065。
 
 ### 6. 预期与验收
 
@@ -1099,6 +1099,19 @@ CPU真实方法张量检查与语法检查已通过。201.5预检20261022_105603
 
 完整边界6000步全部强度为1；12个腿部目标raw/effective逐值相同。肩腕和腰姿态仍接近健康底模，腿部控制未被裁剪。结果支持边界与底模基本兼容；底模在长序列中本身已有严重净偏航，新约束还需通过训练学习，不能据此判为航向验收通过。
 
-64env×200新增轮短训正常结束，无异常或NaN/Inf指标，保存model_27198.pt。最后Mean reward209.11、Mean episode length2299.33步（22.99秒），新upper_pose/waist_pose/leg_target_overflow/yaw_drift_angle均有日志贡献。值函数loss604.11、AMP agent约-0.994，说明短训末价值适应和风格学习仍需观察，不能将链路通过等同于收敛。正式长训仍从健康model_26998开始，尚未创建云端任务。
+64env×200新增轮短训正常结束，无异常或NaN/Inf指标，保存model_27198.pt。最后Mean reward209.11、Mean episode length2299.33步（22.99秒），新upper_pose/waist_pose/leg_target_overflow/yaw_drift_angle均有日志贡献。值函数loss604.11、AMP agent约-0.994，说明短训末价值适应和风格学习仍需观察，不能将链路通过等同于收敛。正式长训从健康model_26998开始，现已启动TASK_20261022_065，详见下方启动记录。
 
 本次不录视频；两份6000行CSV、日志和summary已回收至czy/analysis/exp3_5/preflight_20261022_105603/。验证摘要为validation_summary.json。
+
+
+### 正式长训启动记录（2026-10-22）
+
+- Task ID：TASK_20261022_065；账号limxmv4xopmuth560d@maxxspace.com，userId4567。
+- 平台启动时间：2026-10-22 13:13:29（北京时间）；状态3。实际首轮更新以launch.json及启动日志为准。
+- 资源：1×4090D24G，ESKU000001/SKUSL000002，¥5.4/小时；镜像BJX00000001/V000412。当前资源查询仅返回4090D。
+- 训练提交：c345e078d320242339d431326bfbd35eb511f95e，codex/exp3-5，GitHub和GitLab已同步。用户明确授权发布本轮代码及启动记录。
+- 精确底模路径：X1_29_amp/model_26998.pt；actor/critic/estimator/std继承，D和所有优化器重新初始化。4096env、seed5、新增6000轮，目标model_32998.pt。
+- 正式边界调度24000步热身+24000步渐变；未使用冒烟测试压缩调度。
+- 启动前确认任务挂载元数据personalDataPath为空；未删除云端存储文件。服务器预检和同条件对照均已回收；源模型及参考资源哈希核对通过，配置末尾空行清理与已测版本AST一致。
+
+首轮运行确认：日志27002/32998；已确认精确底模加载、fresh discriminator及迁移校验，进入PPO更新，无启动异常。约63827steps/s，启动期ETA9592.3秒（约2小时40分钟），仅为估算；尚未形成足够episode统计。训练代码提交保持c345e07，后续提交仅补充启动记录。
