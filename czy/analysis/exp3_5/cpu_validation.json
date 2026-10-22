@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "checks": [
+    "warmup identity",
+    "half/full target bounds",
+    "leg targets unchanged",
+    "evaluation full-strength",
+    "walking default reward active",
+    "Huber far-error cost increasing"
+  ],
+  "scope": "CPU tensor checks on real methods; no Isaac Gym physics"
+}

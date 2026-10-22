@@ -1,0 +1,59 @@
+{
+  "finished": true,
+  "returncode": 0,
+  "csv": "/home/robot/czy/exp1/exp_20261022_105603/x1_exp35_preflight/logs/x1_dh_stand_v12_exp34/play_output/20261022_112056_exp35_unbounded_control_isaac_diag.csv",
+  "metadata": {
+    "task": "x1_dh_stand_v12_exp34",
+    "eval_mode": "nominal_no_push",
+    "seed": 123145,
+    "control_dt": 0.01,
+    "physics_dt": 0.001,
+    "video_fps": 50.0,
+    "profile": [
+      [
+        1000,
+        0.0
+      ],
+      [
+        1000,
+        0.4
+      ],
+      [
+        1000,
+        0.6
+      ],
+      [
+        1000,
+        0.0
+      ],
+      [
+        1000,
+        0.4
+      ],
+      [
+        1000,
+        0.0
+      ]
+    ],
+    "steps": 6000,
+    "checkpoint": null,
+    "load_run": null,
+    "zero_residual": false,
+    "checkpoint_path": "/home/robot/czy/exp1/exp_20261022_105603/x1_exp35_preflight/model_26998.pt",
+    "resets": 0,
+    "timeouts": 0,
+    "success": true,
+    "torque_clip_count": 20,
+    "pushes": false,
+    "noise": false
+  },
+  "yaw_drift_end": 4.6853012577328235,
+  "stage_vx": [
+    0.00323972141725244,
+    0.35721920993365347,
+    0.4957667254507542,
+    0.019143700933353103,
+    0.2777491524736397,
+    0.016728017499684483
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "source_checkpoint": "model_26998.pt",
+  "runtime_checks_passed": true,
+  "bounded_replay_resets": 0,
+  "bounded_replay_torque_clip_events": 0,
+  "unbounded_replay_resets": 0,
+  "unbounded_replay_torque_clip_events": 20,
+  "bounded_yaw_drift_rad": 2.8040935057361036,
+  "unbounded_yaw_drift_rad": 4.6853012577328235,
+  "smoke_completed": true,
+  "smoke_final_model": "model_27198.pt",
+  "formal_training_started": false,
+  "limitations": [
+    "single seed nominal-domain check; no claim of final posture/heading convergence",
+    "AMP discriminator still nearly saturated after short smoke",
+    "smoke ramp compressed to 480/960 steps; production remains 24000/24000"
+  ]
+}

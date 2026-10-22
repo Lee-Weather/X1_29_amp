@@ -33,7 +33,6 @@
 
 import os
 import csv
-import math
 import cv2
 import numpy as np
 from isaacgym import gymapi
@@ -57,22 +56,15 @@ x_vel_cmd, y_vel_cmd, yaw_vel_cmd = 0.0, 0.0, 0.0
 joystick_use = True
 joystick_opened = False
 
-# =========== 速度阶梯（控制步数, command_x [m/s]）：0→0.4→0.6→0→-0.2→0 ===========
-VEL_PROFILE = [
-    (500, 0.0),   # 站立
-    (500, 0.4),   # 中速前进 0.4 m/s
-    (500, 0.6),   # 快速前进 0.6 m/s
-    (500, 0.0),   # 减速停止
-    (500, -0.2),  # 后退 0.2 m/s
-    (500, 0.0),   # 回到站立
-]
-TOTAL_PLAY_STEPS = sum(steps for steps, _ in VEL_PROFILE)
+# Unified playback: six stages, each lasting 10 simulation seconds.
+PLAY_SPEEDS = (0.0, 0.4, 0.6, 0.0, 0.4, 0.0)
+PLAY_STAGE_SECONDS = 10.0
 
 
-def current_command(step_idx, profile=None):
+def current_command(step_idx, profile):
     """返回控制步 step_idx 对应的 command_x。"""
     acc = 0
-    for steps, vel in (VEL_PROFILE if profile is None else profile):
+    for steps, vel in profile:
         if step_idx < acc + steps:
             return vel
         acc += steps
@@ -119,8 +111,6 @@ if joystick_use:
 
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
-    if getattr(env_cfg.commands, 'forward_only', False) and args.play_speed is not None and args.play_speed < 0:
-        raise ValueError('this task supports forward/standing playback only')
     zero_residual = getattr(args, "zero_residual", False)
     if zero_residual:
         if not hasattr(env_cfg.control, "residual_enabled"):
@@ -217,14 +207,7 @@ def play(args):
 
     dt = env_cfg.sim.dt * env_cfg.control.decimation
     video_fps = 1.0 / (2 * dt)
-    profile = VEL_PROFILE
-    configured_profile = getattr(env_cfg.env, 'play_speed_profile', None)
-    if configured_profile is not None:
-        profile = [(max(1, round(5.0 / dt)), float(speed)) for speed in configured_profile]
-    if args.play_speed is not None:
-        if not math.isfinite(args.play_speed) or not math.isfinite(args.play_duration) or args.play_duration <= 0:
-            raise ValueError("playback speed must be finite and duration must be positive")
-        profile = [(max(1, round(args.play_duration / dt)), args.play_speed)]
+    profile = [(max(1, round(PLAY_STAGE_SECONDS / dt)), speed) for speed in PLAY_SPEEDS]
     total_play_steps = sum(steps for steps, _ in profile)
     run_name_str = args.run_name if args.run_name is not None else "test"
     logger = Logger(dt)

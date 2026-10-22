@@ -4,9 +4,6 @@ from .x1_dh_stand_config import X1DHStandCfg, X1DHStandCfgPPO
 
 class X1DHStandExp34SourceCfg(X1DHStandCfg):
     """Source-policy playback in the exact nominal domain used by exp3.4."""
-    class env(X1DHStandCfg.env):
-        play_speed_profile = [0.0, 0.4, 0.6, 0.0, 0.4, 0.0]
-
     class domain_rand(X1DHStandCfg.domain_rand):
         initial_domain_nominal = True
         push_robots = False

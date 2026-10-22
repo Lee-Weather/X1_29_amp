@@ -1,0 +1,73 @@
+{
+  "source": "model_26998 B3 initial nominal replay; 0.5/99.5 percentiles union B3 range, margin .05 rad, intersect URDF hard bounds",
+  "bounds": {
+    "lumbar_yaw_joint": [
+      -0.4024593114852905,
+      0.41341044306755065
+    ],
+    "lumbar_roll_joint": [
+      -0.25,
+      0.25
+    ],
+    "lumbar_pitch_joint": [
+      -0.15,
+      0.45
+    ],
+    "left_shoulder_pitch_joint": [
+      -0.4644357144832611,
+      0.3879119658470154
+    ],
+    "left_shoulder_roll_joint": [
+      -0.5352438452839852,
+      0.0
+    ],
+    "left_shoulder_yaw_joint": [
+      -0.2883268028497696,
+      0.42143215537071255
+    ],
+    "left_elbow_pitch_joint": [
+      0.0,
+      0.764232087135315
+    ],
+    "left_elbow_yaw_joint": [
+      -0.31916427895426747,
+      0.23435646593570708
+    ],
+    "left_wrist_pitch_joint": [
+      -0.1722482879459858,
+      0.3682922005653381
+    ],
+    "left_wrist_roll_joint": [
+      -0.11037089239805936,
+      0.31867127418518065
+    ],
+    "right_shoulder_pitch_joint": [
+      -0.5366583943367005,
+      0.20067666023969682
+    ],
+    "right_shoulder_roll_joint": [
+      -0.3513392090797424,
+      0.0
+    ],
+    "right_shoulder_yaw_joint": [
+      -0.40477492213249205,
+      0.24376590028405193
+    ],
+    "right_elbow_pitch_joint": [
+      0.0,
+      0.7659296274185181
+    ],
+    "right_elbow_yaw_joint": [
+      -0.11644245982170105,
+      0.18814405620098118
+    ],
+    "right_wrist_pitch_joint": [
+      -0.260844486951828,
+      0.2483704319596291
+    ],
+    "right_wrist_roll_joint": [
+      -0.18434666395187377,
+      0.2367274875193835
+    ]
+  }
+}

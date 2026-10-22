@@ -1,0 +1,12 @@
+{
+  "last_iteration": 27197,
+  "target": 27198,
+  "saved_completed_iterations": 27198,
+  "smoke_only_warmup_steps": 480,
+  "smoke_only_ramp_steps": 960,
+  "mean_reward": 209.11,
+  "mean_episode_length": 2299.33,
+  "value_loss": 604.1119,
+  "style_reward": 0.0016,
+  "numerical_error_lines": []
+}

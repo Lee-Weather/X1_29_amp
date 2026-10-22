@@ -1,0 +1,73 @@
+{
+  "finished": true,
+  "cases": {
+    "bounded": {
+      "returncode": 0,
+      "csv": "/home/robot/czy/exp1/exp_20261022_105603/x1_exp35_preflight/logs/x1_dh_stand_v12_exp35/play_output/20261022_110638_exp35_bounded_isaac_diag.csv",
+      "metadata": {
+        "task": "x1_dh_stand_v12_exp35",
+        "eval_mode": "nominal_no_push",
+        "seed": 123145,
+        "control_dt": 0.01,
+        "physics_dt": 0.001,
+        "video_fps": 50.0,
+        "profile": [
+          [
+            1000,
+            0.0
+          ],
+          [
+            1000,
+            0.4
+          ],
+          [
+            1000,
+            0.6
+          ],
+          [
+            1000,
+            0.0
+          ],
+          [
+            1000,
+            0.4
+          ],
+          [
+            1000,
+            0.0
+          ]
+        ],
+        "steps": 6000,
+        "checkpoint": null,
+        "load_run": null,
+        "zero_residual": false,
+        "checkpoint_path": "/home/robot/czy/exp1/exp_20261022_105603/x1_exp35_preflight/model_26998.pt",
+        "resets": 0,
+        "timeouts": 0,
+        "success": true,
+        "torque_clip_count": 0,
+        "pushes": false,
+        "noise": false
+      },
+      "stage_vx": [
+        0.0031887135556626163,
+        0.3030851930715144,
+        0.48769376817345617,
+        0.02141511594716576,
+        0.34820379943121227,
+        0.006402461796634271
+      ],
+      "strength_min": 1.0,
+      "strength_max": 1.0,
+      "full_bounds_stable": true
+    },
+    "smoke200": {
+      "returncode": 0,
+      "errors": [],
+      "final_checkpoint": "/home/robot/czy/exp1/exp_20261022_105603/x1_exp35_preflight/logs/x1_dh_stand_v12_exp35/exported_data/2026-10-22_11-07-00exp35_smoke200/model_27198.pt"
+    }
+  },
+  "started_at": "2026-10-22T10:58:51.038012",
+  "ready_for_training": true,
+  "finished_at": "2026-10-22T11:13:59.854890"
+}

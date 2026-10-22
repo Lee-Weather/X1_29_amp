@@ -90,6 +90,12 @@ def capture_playback_step(env, infos, rewards, dones, algorithm, requested, stag
                 row[prefix + "_" + name] = scalar(saved[prefix][:, index])
         for index, name in enumerate(("lateral", "sagittal", "upper")):
             row["ref_group_cost_" + name] = scalar(saved["ref_group_costs"][:, index])
+    if "exp35_target_effective" in saved:
+        for name in ("bounds_strength", "upper_cost", "waist_cost"):
+            row["exp35_" + name] = scalar(saved["exp35_" + name])
+        for index, name in enumerate(env.dof_names):
+            for prefix in ("exp35_target_raw", "exp35_target_effective", "exp35_target_clip_counts"):
+                row[prefix + "_" + name] = scalar(saved[prefix][:, index])
     row.update(task_before_clip=scalar(saved.get("task_before_clip", rewards)),
                task_after_clip=scalar(saved.get("task_after_clip", rewards)), task_reward=scalar(rewards))
     for name, value in saved.get("components", {}).items():

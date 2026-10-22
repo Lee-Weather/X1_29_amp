@@ -90,7 +90,7 @@ class X1DHStandCfg(LeggedRobotCfg):
         # 30% flat + 20% rough flat(±1cm) + 40% ≤5.4° 缓坡 + 10% mm 级凸块，本身近乎平地，
         # 但 curriculum=False 时 reset 出生点按 U(-4,4)m 撒进 8m 格（86% 落在坡面/凹坑上），
         # 且 z 取中心 2m 窗口最大高度 → 与实际落点最多差 ±0.15m（凹格直接穿地），
-        # 是每个 episode 周期性注入的强扰动源。改 plane 同时与 play.py/play_speed_sweep 一致。
+        # 是每个 episode 周期性注入的强扰动源。改 plane 同时与 play.py 一致。
         # 下方 num_rows/num_cols/terrain_dict/*_range 在 plane 下不再生效（仅 trimesh/heightfield 使用）。
         mesh_type = 'plane'
         curriculum = False

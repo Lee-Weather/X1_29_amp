@@ -1,0 +1,260 @@
+{
+  "names_order_match": true,
+  "fps": 50.0,
+  "control_dt": 0.01,
+  "agent_stride": 2,
+  "demo_stride": 1,
+  "window_samples": 3,
+  "agent_window_seconds": 0.04,
+  "demo_window_seconds": 0.04,
+  "demo_finite": true,
+  "notes": [
+    "joint names/time span checked; names alone do not prove physical axis correctness",
+    "demo finite differences versus simulator instantaneous velocities differ in filtering",
+    "prior code audit uses root angular velocity in body frame on both sides; no changes to AMP hyperparameters in exp3.5"
+  ],
+  "joint_distributions": [
+    {
+      "joint": "left_hip_pitch_joint",
+      "agent_q_mean": 0.14607250533030794,
+      "demo_q_mean": -0.03583606332540512,
+      "position_offset_in_demo_std": 0.741796719136899,
+      "agent_dq_std": 1.418207481123949,
+      "demo_dq_std": 1.34064519405365
+    },
+    {
+      "joint": "left_hip_roll_joint",
+      "agent_q_mean": 0.1281246755073468,
+      "demo_q_mean": 0.073689766228199,
+      "position_offset_in_demo_std": 0.8949171845584251,
+      "agent_dq_std": 0.5072654176347344,
+      "demo_dq_std": 0.39979469776153564
+    },
+    {
+      "joint": "left_hip_yaw_joint",
+      "agent_q_mean": -0.08959196961714284,
+      "demo_q_mean": 0.024017980322241783,
+      "position_offset_in_demo_std": 2.0630470054008474,
+      "agent_dq_std": 1.4987909214453858,
+      "demo_dq_std": 0.37163209915161133
+    },
+    {
+      "joint": "left_knee_pitch_joint",
+      "agent_q_mean": 0.37075450163153484,
+      "demo_q_mean": 0.28834399580955505,
+      "position_offset_in_demo_std": 0.28558917131617767,
+      "agent_dq_std": 1.941773773492262,
+      "demo_dq_std": 2.15533185005188
+    },
+    {
+      "joint": "left_ankle_pitch_joint",
+      "agent_q_mean": -0.15114137268076108,
+      "demo_q_mean": -0.147368922829628,
+      "position_offset_in_demo_std": 0.028103734953227856,
+      "agent_dq_std": 1.1616461286862858,
+      "demo_dq_std": 1.0995187759399414
+    },
+    {
+      "joint": "left_ankle_roll_joint",
+      "agent_q_mean": 0.1286863470155125,
+      "demo_q_mean": -0.0249556303024292,
+      "position_offset_in_demo_std": 2.859378651198148,
+      "agent_dq_std": 1.5726716082567918,
+      "demo_dq_std": 0.5632184147834778
+    },
+    {
+      "joint": "lumbar_yaw_joint",
+      "agent_q_mean": 0.022308759766727842,
+      "demo_q_mean": -0.013554840348660946,
+      "position_offset_in_demo_std": 0.16223894730933555,
+      "agent_dq_std": 0.4731846816424724,
+      "demo_dq_std": 1.1283432245254517
+    },
+    {
+      "joint": "lumbar_roll_joint",
+      "agent_q_mean": -0.020993569910758198,
+      "demo_q_mean": -0.020899785682559013,
+      "position_offset_in_demo_std": 0.0018756845639836955,
+      "agent_dq_std": 0.4772931922254587,
+      "demo_dq_std": 0.41136038303375244
+    },
+    {
+      "joint": "lumbar_pitch_joint",
+      "agent_q_mean": 0.02424747726084024,
+      "demo_q_mean": 0.31800174713134766,
+      "position_offset_in_demo_std": 5.483834362699768,
+      "agent_dq_std": 0.4317328513867702,
+      "demo_dq_std": 0.5731782913208008
+    },
+    {
+      "joint": "left_shoulder_pitch_joint",
+      "agent_q_mean": 0.05894096017803895,
+      "demo_q_mean": -0.06090232729911804,
+      "position_offset_in_demo_std": 0.5357568663656919,
+      "agent_dq_std": 0.6747060882146882,
+      "demo_dq_std": 1.1748309135437012
+    },
+    {
+      "joint": "left_shoulder_roll_joint",
+      "agent_q_mean": -0.08277977978109244,
+      "demo_q_mean": -0.16185444593429565,
+      "position_offset_in_demo_std": 0.8249542494158816,
+      "agent_dq_std": 0.8046976233180629,
+      "demo_dq_std": 0.5485504865646362
+    },
+    {
+      "joint": "left_shoulder_yaw_joint",
+      "agent_q_mean": 0.20773990680774054,
+      "demo_q_mean": -0.09796182066202164,
+      "position_offset_in_demo_std": 3.563651324339594,
+      "agent_dq_std": 0.3452141502379082,
+      "demo_dq_std": 0.45878732204437256
+    },
+    {
+      "joint": "left_elbow_pitch_joint",
+      "agent_q_mean": 0.24762466404149255,
+      "demo_q_mean": 0.5427117943763733,
+      "position_offset_in_demo_std": 3.194043660528749,
+      "agent_dq_std": 0.8089675084013992,
+      "demo_dq_std": 0.6580518484115601
+    },
+    {
+      "joint": "left_elbow_yaw_joint",
+      "agent_q_mean": -0.007243527179028509,
+      "demo_q_mean": 0.16065241396427155,
+      "position_offset_in_demo_std": 3.351261081220882,
+      "agent_dq_std": 0.6682278470850876,
+      "demo_dq_std": 0.2907217741012573
+    },
+    {
+      "joint": "left_wrist_pitch_joint",
+      "agent_q_mean": -0.013760114456929689,
+      "demo_q_mean": 0.2503875494003296,
+      "position_offset_in_demo_std": 5.282953277145186,
+      "agent_dq_std": 0.03732258928660619,
+      "demo_dq_std": 0.2967871129512787
+    },
+    {
+      "joint": "left_wrist_roll_joint",
+      "agent_q_mean": -0.0070248572354806435,
+      "demo_q_mean": 0.22568722069263458,
+      "position_offset_in_demo_std": 3.3838071481910994,
+      "agent_dq_std": 0.02565568633335736,
+      "demo_dq_std": 0.31154510378837585
+    },
+    {
+      "joint": "right_shoulder_pitch_joint",
+      "agent_q_mean": -0.0038763005015255963,
+      "demo_q_mean": -0.10158868134021759,
+      "position_offset_in_demo_std": 0.5870151209768046,
+      "agent_dq_std": 0.5816800063082276,
+      "demo_dq_std": 0.9195250272750854
+    },
+    {
+      "joint": "right_shoulder_roll_joint",
+      "agent_q_mean": -0.08676325988623065,
+      "demo_q_mean": -0.25925499200820923,
+      "position_offset_in_demo_std": 3.4498346424395714,
+      "agent_dq_std": 0.4304798775637797,
+      "demo_dq_std": 0.26067009568214417
+    },
+    {
+      "joint": "right_shoulder_yaw_joint",
+      "agent_q_mean": 0.050221655450509085,
+      "demo_q_mean": -0.2714157700538635,
+      "position_offset_in_demo_std": 3.5292526644660382,
+      "agent_dq_std": 0.43908629356131323,
+      "demo_dq_std": 0.4904415011405945
+    },
+    {
+      "joint": "right_elbow_pitch_joint",
+      "agent_q_mean": 0.21986168800791103,
+      "demo_q_mean": 0.6506238579750061,
+      "position_offset_in_demo_std": 8.081403417734654,
+      "agent_dq_std": 0.8060417891936911,
+      "demo_dq_std": 0.421521931886673
+    },
+    {
+      "joint": "right_elbow_yaw_joint",
+      "agent_q_mean": 0.022831328737391837,
+      "demo_q_mean": -0.039502449333667755,
+      "position_offset_in_demo_std": 1.2466755614211917,
+      "agent_dq_std": 0.3124164279394286,
+      "demo_dq_std": 0.1576737016439438
+    },
+    {
+      "joint": "right_wrist_pitch_joint",
+      "agent_q_mean": 0.020127735415056424,
+      "demo_q_mean": -0.12687823176383972,
+      "position_offset_in_demo_std": 2.9401193435779227,
+      "agent_dq_std": 0.12183487903990262,
+      "demo_dq_std": 0.22690191864967346
+    },
+    {
+      "joint": "right_wrist_roll_joint",
+      "agent_q_mean": 0.038907840529767174,
+      "demo_q_mean": -0.057295504957437515,
+      "position_offset_in_demo_std": 1.9240669097440937,
+      "agent_dq_std": 0.048384442728544474,
+      "demo_dq_std": 0.31476259231567383
+    },
+    {
+      "joint": "right_hip_pitch_joint",
+      "agent_q_mean": -0.08848994693439453,
+      "demo_q_mean": -0.008605042472481728,
+      "position_offset_in_demo_std": 0.32852149166373645,
+      "agent_dq_std": 1.4170989590217768,
+      "demo_dq_std": 1.2778881788253784
+    },
+    {
+      "joint": "right_hip_roll_joint",
+      "agent_q_mean": 0.0013365426068861173,
+      "demo_q_mean": -0.06506863236427307,
+      "position_offset_in_demo_std": 0.9636106264650606,
+      "agent_dq_std": 0.7943285722815842,
+      "demo_dq_std": 0.4221819043159485
+    },
+    {
+      "joint": "right_hip_yaw_joint",
+      "agent_q_mean": -0.0626690304660054,
+      "demo_q_mean": 0.01440907921642065,
+      "position_offset_in_demo_std": 1.1345193712588932,
+      "agent_dq_std": 0.9891567580686513,
+      "demo_dq_std": 0.5505178570747375
+    },
+    {
+      "joint": "right_knee_pitch_joint",
+      "agent_q_mean": 0.4811585524061997,
+      "demo_q_mean": 0.37230637669563293,
+      "position_offset_in_demo_std": 0.3884338823132076,
+      "agent_dq_std": 2.0901556174801987,
+      "demo_dq_std": 2.2082345485687256
+    },
+    {
+      "joint": "right_ankle_pitch_joint",
+      "agent_q_mean": -0.21192516231720218,
+      "demo_q_mean": -0.1480560153722763,
+      "position_offset_in_demo_std": 0.4823566948591566,
+      "agent_dq_std": 0.8392907181425678,
+      "demo_dq_std": 1.2338662147521973
+    },
+    {
+      "joint": "right_ankle_roll_joint",
+      "agent_q_mean": -0.025726414937918888,
+      "demo_q_mean": 0.08193301409482956,
+      "position_offset_in_demo_std": 1.9259994273309868,
+      "agent_dq_std": 0.9155092661077574,
+      "demo_dq_std": 0.6498402953147888
+    }
+  ],
+  "phase_contact_geometry": {
+    "left_ankle_roll_link": {
+      "support_sole_height_mean": 0.002769509330391884,
+      "swing_sole_height_mean": 0.01935536414384842
+    },
+    "right_ankle_roll_link": {
+      "support_sole_height_mean": 0.002083102473989129,
+      "swing_sole_height_mean": 0.011136443354189396
+    }
+  }
+}
